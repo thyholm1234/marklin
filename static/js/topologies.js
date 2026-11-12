@@ -308,7 +308,10 @@
         const loopDirs = [...sf.filter(s => s.kind === 'A').map(s => s.dir), ...sg.filter(s => s.kind === 'A').map(s => -s.dir)];
         const sign = Math.sign(m.nf.turn - m.ng.turn);
         const arcs = loopDirs, reflex = loopDirs.some(d => d !== sign) ? 1 : 0;
-        const sc = fill + 0.12 * Math.min(arcs.length, 8) + 0.3 * reflex + 0.35 * rng();
+        const shape = o.areas && o.areas.length
+          ? 0.7 * Math.min(1, bb.h / ih) + 0.45 * reflex + 0.25 * Math.min(arcs.length, 8) / 8
+          : 0;
+        const sc = fill + 0.12 * Math.min(arcs.length, 8) + 0.3 * reflex + shape + 0.35 * rng();
         if (!best || sc > best.sc) best = { sc, ch, sf, sg, bb };
       }
       if (!best) return null;

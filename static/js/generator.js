@@ -36,6 +36,31 @@
     }
     return score / targets.length;
   }
+  function freeSpaceCoverage(points, o) {
+    if (!points.length || !o.areas || !o.areas.length) return 0;
+    const inside = (p, poly) => {
+      let yes = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i], b = poly[j];
+        if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) yes = !yes;
+      }
+      return yes;
+    };
+    const free = [];
+    for (let x = o.margin; x <= o.W - o.margin; x += 200) {
+      for (let y = o.margin; y <= o.H - o.margin; y += 200) {
+        if (!(o.areas || []).some(a => inside({ x, y }, a))) free.push({ x, y });
+      }
+    }
+    if (!free.length) return 0;
+    let covered = 0;
+    for (const q of free) {
+      let near = Infinity;
+      for (const p of points) near = Math.min(near, Math.hypot(p.x - q.x, p.y - q.y));
+      if (near < 110) covered++;
+    }
+    return covered / free.length;
+  }
   function placementFor(chains, f, o, innerW, innerH) {
     if (!o.areas || !o.areas.length) return { x: 0, y: 0 };
     const maxX = (innerW - f.b.w) / 2, maxY = (innerH - f.b.h) / 2;
@@ -59,7 +84,7 @@
       const edgeUse = (b.x1 - b.x0) + (b.y1 - b.y0);
       const edgeReach = -Math.abs(b.x0 - o.margin) - Math.abs(b.y0 - o.margin)
         - Math.abs(b.x1 - (o.W - o.margin)) - Math.abs(b.y1 - (o.H - o.margin));
-      const score = edgeUse * 2 + edgeReach + spaceCoverage(points, o) * 1000;
+      const score = edgeUse * 2 + edgeReach + spaceCoverage(points, o) * 1000 + freeSpaceCoverage(points, o) * 3000;
       if (!best || score > best.score) best = { x, y, score };
     }
     return best ? { x: best.x, y: best.y } : null;
@@ -360,8 +385,8 @@
     let attempts = 0, ringFound = false, lastP = 0;
     const tw = topos.map(x => {
       if (!o.areas || !o.areas.length) return TOPO_W[x.t.id] || 1;
-      if (x.t.id === 'loop') return 8;
-      if (x.t.id === 'free') return 3;
+      if (x.t.id === 'loop') return 2;
+      if (x.t.id === 'free') return 20;
       return TOPO_W[x.t.id] || 1;
     });
     while (attempts < o.maxAttempts && Date.now() < phase1) {
@@ -407,10 +432,12 @@
           return { x: p.x * c - p.y * s + tx, y: p.x * s + p.y * c + ty };
         }));
         const coverage = spaceCoverage(placed, o);
+        const freeCoverage = freeSpaceCoverage(placed, o);
         f.score = o.maximize
           ? 1.2 * nPieces / Math.max(1, totalPieces) + 0.35 * room + 0.4 * st + virtue + 0.25 * rng()
           : 0.45 * fillT + 0.3 * nPieces / Math.max(1, totalPieces) + 0.7 * st + virtue + 0.12 * rng();
         if (o.areas && o.areas.length) f.score += 0.9 * coverage;
+        if (o.areas && o.areas.length) f.score += 6 * freeCoverage;
       }
       fits.sort((a, b) => b.score - a.score);
       if (att.ring) ringFound = true;
@@ -534,6 +561,11 @@
       if (an.problems.length || Object.values(spareOf(inv, usageOf(layout))).some(v => v < 0)) { invalid++; continue; }
       if (!C.pointsClearAreas(obstaclePts(layout), o.areas)) { invalid++; continue; }
       const parts = scoreLayout({ layout, chains: layout.chains, used, station, an, missing, unused, nUsed, o, innerW, innerH });
+      if (o.areas && o.areas.length) {
+        const covered = freeSpaceCoverage(obstaclePts(layout), o);
+        parts.freeSpace = covered * 8000;
+        parts.total += parts.freeSpace;
+      }
       const sc = parts.total + 0.5 * rng();
       if (!best || sc > best.sc) {
         best = { sc, parts, layout, used, station, ch, missing, nUsed, unused, an };
