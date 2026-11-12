@@ -479,7 +479,12 @@
         progress('Optimerer', { best: nUsed, total: totalPieces, tried, swUsed: switchesTotal - unused, swTotal: switchesTotal });
       }
     }
-    if (!best) return { error: 'Kunne ikke placere en bane. Prøv igen eller med længere tænketid.', attempts };
+    if (!best) {
+      const reason = o.areas && o.areas.length
+        ? 'Der er ikke nok sammenhængende plads uden for forbudsområderne. Gør et område mindre, flyt det eller fjern et område.'
+        : 'Kunne ikke placere en bane. Prøv igen eller med længere tænketid.';
+      return { error: reason, attempts };
+    }
     const { layout, used, station, missing } = best;
     const ch = best.ch;
     for (const p of [...layout.chains.flatMap(c => c.pieces), ...layout.sides.flatMap(s => s.pieces)]) {
