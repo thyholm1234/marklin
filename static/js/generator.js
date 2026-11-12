@@ -21,20 +21,48 @@
     const ty = o.margin + (innerH - f.b.h) / 2 - f.b.y0 + shift.y;
     return st => ({ x: st.x * c - st.y * s + tx, y: st.x * s + st.y * c + ty, h: (st.h || 0) + f.rot });
   }
+  function spaceCoverage(points, o) {
+    if (!points.length) return 0;
+    const targets = [
+      { x: o.margin, y: o.margin }, { x: o.W - o.margin, y: o.margin },
+      { x: o.margin, y: o.H - o.margin }, { x: o.W - o.margin, y: o.H - o.margin },
+      ...(o.areas || []).flat(),
+    ];
+    let score = 0;
+    for (const t of targets) {
+      let d = Infinity;
+      for (const p of points) d = Math.min(d, Math.hypot(p.x - t.x, p.y - t.y));
+      score += Math.max(0, 1 - d / 700);
+    }
+    return score / targets.length;
+  }
   function placementFor(chains, f, o, innerW, innerH) {
     if (!o.areas || !o.areas.length) return { x: 0, y: 0 };
     const maxX = (innerW - f.b.w) / 2, maxY = (innerH - f.b.h) / 2;
-    const values = n => [...new Set([0, -n, n, -n * 0.5, n * 0.5].map(x => Math.round(x)))];
+    const values = n => {
+      const step = 200;
+      const out = [];
+      for (let x = -n; x <= n; x += step) out.push(Math.round(x));
+      if (!out.includes(Math.round(n))) out.push(Math.round(n));
+      return out;
+    };
     const c = Math.cos(f.rot * D2R), s = Math.sin(f.rot * D2R);
+    let best = null;
     for (const x of values(maxX)) for (const y of values(maxY)) {
       const tx = o.margin + (innerW - f.b.w) / 2 - f.b.x0 + x;
       const ty = o.margin + (innerH - f.b.h) / 2 - f.b.y0 + y;
       const points = chains.flatMap(ch => ch.samples.map(p => ({
         x: p.x * c - p.y * s + tx, y: p.x * s + p.y * c + ty,
       })));
-      if (C.pointsClearAreas(points, o.areas)) return { x, y };
+      if (!C.pointsClearAreas(points, o.areas)) continue;
+      const b = C.bbox(points);
+      const edgeUse = (b.x1 - b.x0) + (b.y1 - b.y0);
+      const edgeReach = -Math.abs(b.x0 - o.margin) - Math.abs(b.y0 - o.margin)
+        - Math.abs(b.x1 - (o.W - o.margin)) - Math.abs(b.y1 - (o.H - o.margin));
+      const score = edgeUse * 2 + edgeReach + spaceCoverage(points, o) * 1000;
+      if (!best || score > best.score) best = { x, y, score };
     }
-    return null;
+    return best ? { x: best.x, y: best.y } : null;
   }
   function fitsOf(chains, innerW, innerH) {
     const allS = chains.flatMap(ch => ch.samples);
@@ -87,8 +115,7 @@
       return newRunId();
     };
     const valid = () => chains.every(c => !c.cyclic || Math.hypot(c.end.x - c.start.x, c.end.y - c.start.y) < 3) &&
-      fitsOf(chains, innerW, innerH).length && !chainsCollide(chains) &&
-      C.pointsClearAreas(chains.flatMap(c => c.samples), o.areas);
+      fitsOf(chains, innerW, innerH).length && !chainsCollide(chains);
     let added = 0, fails = 0;
     while (Date.now() < deadline && fails < 150) {
       const spare = spareOf(inv, usageOf({ chains, sides: [] }));
@@ -331,14 +358,19 @@
     // ---------- fase 1: mange gyldige grundformer ----------
     const cands = [], seen = new Set();
     let attempts = 0, ringFound = false, lastP = 0;
-    const tw = topos.map(x => TOPO_W[x.t.id] || 1);
+    const tw = topos.map(x => {
+      if (!o.areas || !o.areas.length) return TOPO_W[x.t.id] || 1;
+      if (x.t.id === 'loop') return 8;
+      if (x.t.id === 'free') return 3;
+      return TOPO_W[x.t.id] || 1;
+    });
     while (attempts < o.maxAttempts && Date.now() < phase1) {
       attempts++;
       if (Date.now() - lastP > 250) { lastP = Date.now(); progress('Finder grundformer', { attempts, valid: cands.length }); }
       const tp = pickW(rng, topos, tw);
       const want = {
-        ring: mode('ring') === 'must' || (mode('ring') === 'may' && rng() < 0.5),
-        ring2: mode('ring3') === 'must' || (mode('ring3') === 'may' && rng() < 0.45),
+        ring: mode('ring') === 'must' || (mode('ring') === 'may' && rng() < (o.areas && o.areas.length ? 0.9 : 0.5)),
+        ring2: mode('ring3') === 'must' || (mode('ring3') === 'may' && rng() < (o.areas && o.areas.length ? 0.75 : 0.45)),
       };
       const att = tp.t.attempt(inv, o, rng, tp.prep, want);
       if (!att) continue;
@@ -368,9 +400,17 @@
         const virtue = 0.3 * (att.reverseLoops || 0) + (att.dslip ? 0.3 : 0) + (att.ring ? 0.3 * att.ring : 0);
         // plads indeni: ruteløseren skal kunne lægge ruter og sløjfer inde i banen (R1-sløjfe ≈ 800 mm)
         const room = Math.min(1, Math.min(f.b.w, f.b.h) / Math.min(1250, Math.min(innerW, innerH)));
+        const placed = att.chains.flatMap(ch => ch.samples.map(p => {
+          const c = Math.cos(f.rot * D2R), s = Math.sin(f.rot * D2R);
+          const tx = o.margin + (innerW - f.b.w) / 2 - f.b.x0 + f.offset.x;
+          const ty = o.margin + (innerH - f.b.h) / 2 - f.b.y0 + f.offset.y;
+          return { x: p.x * c - p.y * s + tx, y: p.x * s + p.y * c + ty };
+        }));
+        const coverage = spaceCoverage(placed, o);
         f.score = o.maximize
           ? 1.2 * nPieces / Math.max(1, totalPieces) + 0.35 * room + 0.4 * st + virtue + 0.25 * rng()
           : 0.45 * fillT + 0.3 * nPieces / Math.max(1, totalPieces) + 0.7 * st + virtue + 0.12 * rng();
+        if (o.areas && o.areas.length) f.score += 0.9 * coverage;
       }
       fits.sort((a, b) => b.score - a.score);
       if (att.ring) ringFound = true;
@@ -430,6 +470,8 @@
         if (!fs.length) continue;
         fs.sort((a, b) => (a.b.w * a.b.h) - (b.b.w * b.b.h));
         f = fs[Math.floor(rng() * fs.length)];
+        f.offset = placementFor(chains, f, o, innerW, innerH);
+        if (!f.offset) continue;
       }
       tried++;
       const tf = makeTf(f, o, innerW, innerH, f.offset);
