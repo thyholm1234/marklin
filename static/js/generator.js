@@ -15,10 +15,26 @@
 
   const TOPO_W = { loop: 3, dogbone: 1.6, p2p: 1.4, figure8: 1.8, free: 3 };
 
-  function makeTf(f, o, innerW, innerH) {
+  function makeTf(f, o, innerW, innerH, shift = { x: 0, y: 0 }) {
     const c = Math.cos(f.rot * D2R), s = Math.sin(f.rot * D2R);
-    const tx = o.margin + (innerW - f.b.w) / 2 - f.b.x0, ty = o.margin + (innerH - f.b.h) / 2 - f.b.y0;
+    const tx = o.margin + (innerW - f.b.w) / 2 - f.b.x0 + shift.x;
+    const ty = o.margin + (innerH - f.b.h) / 2 - f.b.y0 + shift.y;
     return st => ({ x: st.x * c - st.y * s + tx, y: st.x * s + st.y * c + ty, h: (st.h || 0) + f.rot });
+  }
+  function placementFor(chains, f, o, innerW, innerH) {
+    if (!o.areas || !o.areas.length) return { x: 0, y: 0 };
+    const maxX = (innerW - f.b.w) / 2, maxY = (innerH - f.b.h) / 2;
+    const values = n => [...new Set([0, -n, n, -n * 0.5, n * 0.5].map(x => Math.round(x)))];
+    const c = Math.cos(f.rot * D2R), s = Math.sin(f.rot * D2R);
+    for (const x of values(maxX)) for (const y of values(maxY)) {
+      const tx = o.margin + (innerW - f.b.w) / 2 - f.b.x0 + x;
+      const ty = o.margin + (innerH - f.b.h) / 2 - f.b.y0 + y;
+      const points = chains.flatMap(ch => ch.samples.map(p => ({
+        x: p.x * c - p.y * s + tx, y: p.x * s + p.y * c + ty,
+      })));
+      if (C.pointsClearAreas(points, o.areas)) return { x, y };
+    }
+    return null;
   }
   function fitsOf(chains, innerW, innerH) {
     const allS = chains.flatMap(ch => ch.samples);
@@ -71,7 +87,8 @@
       return newRunId();
     };
     const valid = () => chains.every(c => !c.cyclic || Math.hypot(c.end.x - c.start.x, c.end.y - c.start.y) < 3) &&
-      fitsOf(chains, innerW, innerH).length && !chainsCollide(chains);
+      fitsOf(chains, innerW, innerH).length && !chainsCollide(chains) &&
+      C.pointsClearAreas(chains.flatMap(c => c.samples), o.areas);
     let added = 0, fails = 0;
     while (Date.now() < deadline && fails < 150) {
       const spare = spareOf(inv, usageOf({ chains, sides: [] }));
@@ -337,7 +354,9 @@
       const layout = { chains: att.chains, sides: [] };
       const nPieces = countUsed(layout);
       for (const f of fits) {
-        const tf = makeTf(f, o, innerW, innerH);
+        f.offset = placementFor(att.chains, f, o, innerW, innerH);
+        if (!f.offset) continue;
+        const tf = makeTf(f, o, innerW, innerH, f.offset);
         let st = 0;
         if (o.stationTracks) {
           const so = MK.station.stationOptions(layout, inv, o.stationTracks, o.point, tf);
@@ -355,7 +374,7 @@
       }
       fits.sort((a, b) => b.score - a.score);
       if (att.ring) ringFound = true;
-      cands.push({ att, rot: fits[0].rot, b: fits[0].b, score: fits[0].score, avoided: avoid.has(att.sig) });
+      cands.push({ att, rot: fits[0].rot, b: fits[0].b, offset: fits[0].offset, score: fits[0].score, avoided: avoid.has(att.sig) });
     }
     let pool = cands.filter(c => !c.avoided);
     if (!pool.length) pool = cands;
@@ -392,7 +411,7 @@
       if (best && (long ? (Date.now() > deadline || (!o.maximize && !best.unused && !best.missing.length)) : (!best.missing.length || Date.now() - tF > 2500))) break;
       const ch = list[idx];
       const chains = structuredClone(ch.att.chains);
-      let f = { rot: ch.rot, b: ch.b };
+      let f = { rot: ch.rot, b: ch.b, offset: ch.offset || { x: 0, y: 0 } };
       let stemmed = 0;
       if (o.maximize) {
         const left = Math.max(0, deadline - Date.now());
@@ -413,7 +432,7 @@
         f = fs[Math.floor(rng() * fs.length)];
       }
       tried++;
-      const tf = makeTf(f, o, innerW, innerH);
+      const tf = makeTf(f, o, innerW, innerH, f.offset);
       const layout = { chains, sides: [] };
       chains.forEach(c => { c.start = c.attach !== undefined ? chains[c.attach].end : tf(c.start); layoutChain(c); });
       if (!C.pointsClearAreas(chains.flatMap(c => c.samples), o.areas)) continue;
