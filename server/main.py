@@ -12,11 +12,14 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 class NoCacheStatic(StaticFiles):
-    """Browseren skal altid tjekke for nye filer (ETag gør det billigt)."""
+    """Browseren og CDN'et skal altid hente den aktuelle statiske version."""
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-cache"
+        if path.endswith(".html") or path == "":
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+        else:
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
         return response
 
 
