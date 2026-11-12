@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Märklin Baneplanlægger</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #ffffff; --ink: #1f2328; --muted: #6b6f76; --line: #e2ddd2;
+    --accent: #b3261e; --accent-ink: #fff; --chip: #f0ece3; --focus: #1d5fbf;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17191c; --panel: #212429; --ink: #e8e6e1; --muted: #9aa0a6; --line: #34383e;
+      --accent: #e5534b; --accent-ink: #fff; --chip: #2b2f35; --focus: #6ea8fe;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; padding: 16px; max-width: 1600px; margin: 0 auto; }
+  @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; } }
+  .layout > * { min-width: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  label.f { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  input[type=number] { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+  input[type=number]:focus, select:focus, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+  .chip:hover { border-color: var(--muted); }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin: 7px 0; cursor: pointer; }
+  .check input { margin-top: 3px; }
+  .check small { display: block; color: var(--muted); font-size: 12px; }
+  table.inv { width: 100%; border-collapse: collapse; }
+  table.inv td { padding: 3px 2px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  table.inv td.n { width: 64px; }
+  table.inv td.n input { padding: 3px 6px; text-align: right; }
+  table.inv .art { font-variant-numeric: tabular-nums; font-weight: 600; }
+  table.inv .desc { color: var(--muted); font-size: 12px; }
+  table.inv tr.grp td { border: 0; padding-top: 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 12px; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; padding: 10px 18px; font-size: 15px; }
+  button.primary:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .45; cursor: default; }
+  .status { color: var(--muted); font-size: 13px; }
+  button.primary.running { background: #b3261e; border-color: #b3261e; }
+  .results { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 10px; margin-bottom: 8px; }
+  .results .thumb { flex: 0 0 auto; width: 150px; padding: 4px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; text-align: left; }
+  .results .thumb svg { width: 100%; height: 86px; display: block; border-radius: 4px; }
+  .results .thumb.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow: hidden; }
+  .stage svg { width: 100%; height: auto; display: block; max-height: 72vh; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; }
+  .facts div b { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
+  .facts div span { font-size: 15px; font-variant-numeric: tabular-nums; }
+  .bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  @media (max-width: 1100px) { .bottom { grid-template-columns: 1fr; } }
+  table.parts { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.parts th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); padding: 4px; }
+  table.parts td { padding: 4px; border-bottom: 1px solid var(--line); }
+  table.parts td.num, table.parts th.num { text-align: right; }
+  table.parts td:first-child { white-space: nowrap; }
+  table.parts tr:hover td { background: var(--chip); }
+  table.parts .zero { color: var(--muted); }
+  .warn { color: var(--accent); }
+  .ref { font-size: 12px; color: var(--muted); }
+  .ref table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .ref td, .ref th { padding: 2px 4px; border-bottom: 1px solid var(--line); text-align: left; }
+  .tip { position: fixed; pointer-events: none; background: #111; color: #fff; font-size: 12px; padding: 5px 8px; border-radius: 6px; opacity: 0; transition: opacity .1s; z-index: 10; max-width: 280px; }
+  g.pc { cursor: help; }
+  g.pc.hl .bed { stroke: #ffcc33 !important; }
+  .empty { padding: 60px 20px; text-align: center; color: var(--muted); }
+  @media print { aside, .toolbar, header .sub, .ref { display: none !important; } .layout { grid-template-columns: 1fr; } body { background: #fff; } .stage svg { max-height: none; } }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg label { flex: 1; cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { display: block; text-align: center; padding: 7px 6px; font-size: 13px; }
+  .seg input:checked + span { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: -2px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 8px 0 4px; }
+  .chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .check.off { opacity: .45; pointer-events: none; }
+  .stage svg { cursor: crosshair; }
+  .el { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .el:last-child { border-bottom: 0; }
+  .el b { font-weight: 500; font-size: 13px; }
+  .el small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+  .tri { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .tri label { cursor: pointer; }
+  .tri input { position: absolute; opacity: 0; pointer-events: none; }
+  .tri span { display: block; padding: 2px 8px; font-size: 12px; }
+  .tri input:checked + span { background: var(--chip); font-weight: 600; }
+  .tri input[value=must]:checked + span { background: var(--accent); color: var(--accent-ink); }
+  .tri input[value=off]:checked + span { color: var(--muted); }
+  .tri input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: -2px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
+  kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Märklin Baneplanlægger</h1>
+  <span class="sub">Generér baneplaner med C-skinner (H0) ud fra pladestørrelse og dit sporlager</span>
+</header>
+
+<div class="layout">
+  <aside>
+    <div class="card">
+      <h2>Plade</h2>
+      <div class="row">
+        <div><label class="f" for="bw">Bredde (cm)</label><input id="bw" type="number" min="60" max="1000" step="5" value="200"></div>
+        <div><label class="f" for="bh">Dybde (cm)</label><input id="bh" type="number" min="60" max="1000" step="5" value="120"></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div><label class="f" for="margin">Afstand fra spormidte til kant (mm)</label><input id="margin" type="number" min="25" max="200" step="5" value="50"></div>
+      </div>
+      <div class="chips" id="sizeChips"></div>
+    </div>
+
+    <div class="card">
+      <h2>Strategier</h2>
+      <p class="hint" style="margin-top:0">Generatoren sammensætter banen af små byggeklodser. Vælg hvilke der må bruges – hver ny bane blander dem tilfældigt.</p>
+      <label class="f">Grundformer (én pr. bane)</label>
+      <div id="topoList"></div>
+      <label class="f" style="margin-top:12px">Elementer</label>
+      <div id="elemList"></div>
+      <label class="f" style="margin-top:12px">Mål</label>
+      <label class="check"><input type="checkbox" id="optMax" checked><span>Brug flest mulige skinner<small>Banen vokses med ekstra lige stykker, og alle elementer forsøges, så mest muligt af lageret bliver brugt</small></span></label>
+      <label class="check"><input type="checkbox" id="optAllSw"><span>Brug alle sporskifter<small>Alle sporskifter, buesporskifter og trevejsskifter skal med. Mangler der 24224 eller prelbukke, lægges blindspor i 24,3° vinkel og/eller uden prelbuk</small></span></label>
+      <label class="f" style="margin-top:12px">Generelt</label>
+      <label class="check"><input type="checkbox" id="optS" checked><span>Tillad S-kurver<small>Modkurver giver mere varierede former</small></span></label>
+      <label class="check"><input type="checkbox" id="optLarge"><span>Foretræk store radier<small>Bedre kørsel for lange vogne</small></span></label>
+    </div>
+
+    <div class="card">
+      <h2>Station</h2>
+      <label class="f" for="stTracks">Spor ved siden af hovedsporet</label>
+      <select id="stTracks">
+        <option value="0">Ingen station</option>
+        <option value="1" selected>1 (vigespor – 2 spor i alt)</option>
+        <option value="2">2 (3 spor i alt)</option>
+        <option value="3">3 (4 spor i alt)</option>
+      </select>
+      <label class="f" style="margin-top:10px">Placering</label>
+      <div class="chips" id="placeChips"></div>
+      <p class="hint">Eller klik på pladen for at sætte stationens placering. Stationen lægges på den lige strækning, der giver flest parallelle spor tættest på punktet.</p>
+    </div>
+
+    <div class="card">
+      <h2>Sporlager</h2>
+      <div class="row" style="margin-bottom:8px">
+        <div>
+          <select id="preset" aria-label="Forudindstillet lager">
+            <option value="">Vælg forudindstilling…</option>
+            <option value="small">Lille sæt (R1-oval)</option>
+            <option value="medium">Mellem samling</option>
+            <option value="large">Stor samling</option>
+            <option value="mine">Min samling</option>
+            <option value="zero">Nulstil alt</option>
+          </select>
+        </div>
+      </div>
+      <table class="inv" id="invTable"></table>
+    </div>
+  </aside>
+
+  <main>
+    <div class="toolbar">
+      <button class="primary" id="gen">Generér baner</button>
+      <button id="prev" title="Forrige bane" aria-label="Forrige bane">←</button>
+      <button id="next" title="Næste bane" aria-label="Næste bane">→</button>
+      <button id="dl" title="Hent baneplanen som SVG">Hent SVG</button>
+      <button id="print" title="Udskriv">Udskriv</button>
+      <span class="status" id="status">Tryk <kbd>Generér baner</kbd> (eller mellemrum)</span>
+    </div>
+    <div class="results" id="results" hidden></div>
+    <div class="stage" id="stage"><div class="empty">Ingen bane endnu</div></div>
+
+    <div class="card" style="margin-top:14px" id="factsCard" hidden>
+      <h2 id="factsTitle">Baneplan</h2>
+      <div class="facts" id="facts"></div>
+    </div>
+
+    <div class="bottom">
+      <div class="card">
+        <h2>Stykliste</h2>
+        <table class="parts" id="parts"></table>
+      </div>
+      <div class="card ref">
+        <h2>Mål for C-skinner</h2>
+        Geometrien bygger på Märklins officielle mål: lige standardspor 188,3 mm, radier R1 = 360, R2 = 437,5,
+        R3 = 515, R4 = 579,3, R5 = 643,6 mm. Sporskifterne 24611/24612 er 188,3 mm lange med afvigende gren R2 = 437,5 mm, 24,3°.
+        Sporskifte + modkurve 24224 giver præcis 77,5 mm parallel sporafstand over 360 mm (= 24188 + 24172). Krydsninger: 24640 = 188,3 mm/24,3°, 24649 = 103,3 mm/48,6°. Trevejsskifte 24630 = 188,3 mm med to grene R2 24,3°. Strækningsraster 360 mm = sporskifte 188,3 + 171,7 mm; sporskifte + 24206 (5,7°) = 30°. Slanke sporskifter 24711/24712: 236,1 mm, gren R 1114,6 mm/12,1°, med 24071 på begge ben og modkurve 24912 giver de 64,3 mm sporafstand over 536,2 mm. Dobbelt krydsningssporskifte 24624 har samme mål som krydsning 24640. *Buesporskifte 24671/24672: to forskudte R1 30°-buer – indre spor = 24130, stamsporet forlænget 77,5 mm (Märklin H0-katalog 2005, s. 344). 24771/24772 er samme princip i R3: indre spor 515 mm/30° (= 24330), stamsporet forlænget 64,3 mm, så ydersporet efter 90° ligger 64,3 mm parallelt (Märklins vejledning).
+        <table id="refTable"></table>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="tip" id="tip"></div>
+
+<script src="js/core.js?v=18"></script>
+<script src="js/graph.js?v=18"></script>
+<script src="js/lattice.js?v=18"></script>
+<script src="js/topologies.js?v=18"></script>
+<script src="js/elements.js?v=18"></script>
+<script src="js/router.js?v=18"></script>
+<script src="js/generator.js?v=18"></script>
+<script src="js/app.js?v=18"></script>
+</body>
+</html>

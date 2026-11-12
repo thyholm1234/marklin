@@ -1,0 +1,8 @@
+services:
+  web:
+    build: .
+    image: marklin-baneplanlaegger:latest
+    container_name: marklin-web
+    ports:
+      - "8261:8000"
+    restart: unless-stopped
