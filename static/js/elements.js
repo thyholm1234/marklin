@@ -507,6 +507,11 @@
 
   // ---------- Trevejsskifte med et blindspor til hver side ----------
   function addThreeWay(layout, inv, o, rng, relaxed = false) {
+    const parallel = spareNow(layout, inv);
+    if (parallel['24611'] > 0 && parallel['24612'] > 0 && parallel['24224'] >= 3) {
+      const tracks = addThreeWayStation(layout, inv, o, rng);
+      if (tracks) return tracks;
+    }
     const cands = [];
     layout.chains.forEach(ch => { if (ch.eligible) ch.pieces.forEach((p, i) => { if (switchable(ch, i)) cands.push({ ch, i }); }); });
     for (const { ch, i } of shuffle(rng, cands)) {
@@ -1073,17 +1078,18 @@
 
   MK.elements = [
     { id: 'ring', name: 'Parallel ring (dobbeltspor)', desc: 'Ydre ring 77,5 mm uden for en lukket sløjfe (R1→R2, R2→R3). Forbindes altid med sporforbindelser, så alt hænger sammen.', stage: 'topology' },
+    { id: 'ring3', name: 'Tresporet lukket sløjfe', desc: 'En ekstra parallel ring 77,5 mm længere ude, så den lukkede sløjfe får tre parallelle spor. Kræver nok R2/R3-kurver og lige skinner.', stage: 'topology' },
     { id: 'crossover', name: 'Sporforbindelser', desc: 'To sporskifter mellem parallelle spor. To modsatrettede giver en dobbeltrettet ring; på et hundeben bliver de til vendeforbindelser.', apply: (l, i, o, r) => addCrossovers(l, i, o, r, 2), reverseOn: 'dogbone' },
     { id: 'cutoff', name: 'Vendeforbindelse (diagonal)', desc: 'Diagonalt spor tværs gennem en oval mellem to modsatrettede lige stræk – deler banen i to vendesløjfer.', apply: addCutoff, reverse: true },
     { id: 'wye', name: 'Trekantspor', desc: 'Vendetrekant med tre sporskifter og stikspor. Kræver typisk 3× 24206 (5,7°).', apply: addWye, reverse: true },
     { id: 'stub', name: 'Vendesløjfe på stikspor', desc: 'Ballonsløjfe for enden af et stikspor fra hovedsporet.', apply: addBalloonStub, reverse: true },
-    { id: 'tstation', name: 'Station med trevejsskifte', desc: 'Trevejsskifte 24630 som indgang: vigespor på begge sider (4× 24224) eller vigespor + blindspor (3× 24224). Lægges nær stationspunktet.', apply: addThreeWayStation },
+    { id: 'tstation', name: 'Station med trevejsskifte', desc: 'Trevejsskifte 24630 som indgang. Grenene forbindes med 24611/24612 og 24224 til parallelle spor: vigespor på begge sider (4× 24224) eller vigespor + blindspor (3× 24224).', apply: addThreeWayStation },
     { id: 'cfan', name: 'Hjørnestation med buesporskifter', desc: 'Märklins hjørnekombination: buesporskifte i starten af et 90°-hjørne (3× 24130) + et buesporskifte mere på det ydre ben – ét spor bliver til tre parallelle spor (77,5 og 155 mm ude, med 24130 og 24230), som samles igen spejlvendt i næste hjørne. Kan også give ét ekstra spor. I R3 med 24771/24772 (64,3 mm, ydre spor 24430).', apply: addCornerFan },
     { id: 'cstation', name: 'Station med buesporskifte', desc: 'Stationsspor der begynder i kurven: buesporskifte 24671/24672 i starten af en 90°-kurve, ydersporet fortsætter parallelt langs den lige strækning og genforenes med sporskifte + 24224.', apply: addCurveStation },
     { id: 'passing', name: 'Ekstra vigespor', desc: 'Vigespor på lige stræk (sporskifte venstre + højre og 2× 24224) – 360 mm-rasteret: sporskifte + 24172 på hovedsporet.', apply: (l, i, o, r) => addPassing(l, i, o, r, o.maximize ? 2 : 1) },
     { id: 'spassing', name: 'Vigespor med slanke sporskifter', desc: 'Slanke sporskifter 24711/24712 (12,1°) med 24071 + modkurve 24912 – sidesporet ligger 64,3 mm parallelt. Hovedsporet: sporskifte + 24071 + 24229 (536,2 mm). Kræver 2× 24912, 4× 24071 og 2× 24229.', apply: addSlimPassing },
     { id: 'cpassing', name: 'Vigespor i kurve', desc: 'To buesporskifter om en 180°-kurve med et ydre vigespor: 24671/24672 i R1 (77,5 mm uden for) eller 24771/24772 i R3 (64,3 mm uden for).', apply: addCurvePassing },
-    { id: 'threeway', name: 'Trevejsskifte', desc: 'Trevejsskifte 24630 med et blindspor til hver side (kræver 2× 24224 og 2 prelbukke 24977/24978).', apply: addThreeWay },
+    { id: 'threeway', name: 'Trevejsskifte', desc: 'Trevejsskifte 24630. Forbindes først med 24611/24612 og 24224 til parallelle spor; ellers bruges et blindspor til hver side med 2× 24224 og 2 prelbukke.', apply: addThreeWay },
     { id: 'csiding', name: 'Blindspor fra buesporskifte', desc: 'Buesporskifte med blindspor: 24671/24672 i en R1-kurve (ydre spor 77,5 mm lige + R1 30°) eller 24771/24772 i en R3-kurve (64,3 mm + R3 30°).', apply: (l, i, o, r) => addCurveSidings(l, i, o, r, 1) },
     { id: 'siding', name: 'Blindspor', desc: 'Sporskifte + 24224 + lige spor + prelbuk 24977/24978.', apply: (l, i, o, r) => addSidings(l, i, o, r, o.maximize ? 2 : 1) },
   ];

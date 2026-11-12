@@ -156,7 +156,7 @@
   const RUN_MS = s => s.maximize || s.allSwitches ? 2500 : 900;     // tænketid pr. bane
   let worker = null, jobId = 0, timer = null, statusTimer = null, running = false, follow = true, errors = 0, t0 = 0;
   function newWorker() {
-    try { return new Worker('js/worker.js?v=20261112-2039'); } catch (e) { return false; }
+    try { return new Worker('js/worker.js?v=20261112-2054'); } catch (e) { return false; }
   }
   function stop(msg) {
     running = false; jobId++;

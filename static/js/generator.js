@@ -290,6 +290,7 @@
 
     // forbered tilladte grundformer
     const ringMust = mode('ring') === 'must';
+    const tripleRingMust = mode('ring3') === 'must';
     const topos = [], failed = [];
     for (const t of MK.topologies) {
       if (o.topologies[t.id] === false) continue;
@@ -318,9 +319,13 @@
       attempts++;
       if (Date.now() - lastP > 250) { lastP = Date.now(); progress('Finder grundformer', { attempts, valid: cands.length }); }
       const tp = pickW(rng, topos, tw);
-      const want = { ring: mode('ring') === 'must' || (mode('ring') === 'may' && rng() < 0.5) };
+      const want = {
+        ring: mode('ring') === 'must' || (mode('ring') === 'may' && rng() < 0.5),
+        ring2: mode('ring3') === 'must' || (mode('ring3') === 'may' && rng() < 0.45),
+      };
       const att = tp.t.attempt(inv, o, rng, tp.prep, want);
       if (!att) continue;
+      if (tripleRingMust && att.ring !== 2) continue;
       if (seen.has(att.sig)) continue; seen.add(att.sig);
       if (ringMust && !att.ring) continue;
       att.topo = tp.t.id;
@@ -485,6 +490,9 @@
     const reverse = best.an.reverse;
     const strat = [{ id: ch.att.topo, name: ch.att.dslip ? ch.att.name : MK.topologies.find(t => t.id === ch.att.topo).name, n: 1 }];
     if (ring) strat.push({ id: 'ring', name: 'Parallel ring', n: 1 });
+    if (ring && layout.chains.filter(c => c.kind === 'ring').length >= 2) {
+      strat.push({ id: 'ring3', name: 'Tresporet lukket sløjfe', n: 1 });
+    }
     if (station && station.tracks) strat.push({ id: 'station', name: `Station (${station.tracks + 1} spor)`, n: 1 });
     for (const e of MK.elements) if (used[e.id]) strat.push({ id: e.id, name: e.name, n: used[e.id] });
     return {

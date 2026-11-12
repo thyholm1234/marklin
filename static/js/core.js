@@ -403,6 +403,15 @@
   function sideOk(pts, layout, swPts, o, extra = []) {
     const m = o.margin;
     for (const p of pts) if (p.x < m || p.y < m || p.x > o.W - m || p.y > o.H - m) return false;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 5; j < pts.length; j++) {
+        const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
+        if (dx * dx + dy * dy >= MIN_CLEAR * MIN_CLEAR) continue;
+        if (swPts.some(w => Math.hypot(pts[i].x - w.x, pts[i].y - w.y) < 230 &&
+          Math.hypot(pts[j].x - w.x, pts[j].y - w.y) < 230)) continue;
+        return false;
+      }
+    }
     const g = new Grid(MIN_CLEAR);
     layout.chains.forEach(ch => ch.samples.forEach(q => g.add({ x: q.x, y: q.y, side: false })));
     layout.sides.forEach(sd => sd.pts.forEach(q => g.add({ x: q.x, y: q.y, side: true })));
@@ -414,7 +423,7 @@
       if (g.near(p.x, p.y, q => {
         const dx = q.x - p.x, dy = q.y - p.y, dd = dx * dx + dy * dy;
         if (dd >= pd2) return false;
-        if (p.near && swPts.some(w => Math.hypot(q.x - w.x, q.y - w.y) < 450)) {
+        if (p.near && swPts.some(w => Math.hypot(q.x - w.x, q.y - w.y) < 230)) {
           // tæt på sporskiftet må sporene gå tæt – men et andet sidespor må aldrig krydses
           return q.side && dd < 625 && !swPts.some(w => Math.hypot(q.x - w.x, q.y - w.y) < 150);
         }

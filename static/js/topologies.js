@@ -53,7 +53,7 @@
 
   const loop = {
     id: 'loop', name: 'Lukket sløjfe',
-    desc: 'Oval, rektangel, sekskant, S-kurver … Kan få en parallel ydre ring.',
+    desc: 'Oval, rektangel, sekskant, S-kurver … Kan få en eller to parallelle ydre ringe.',
     prep(inv) { return totalCurveDeg(inv) >= 360 - 1e-6 ? {} : null; },
     attempt(inv0, o, rng, prep, want) {
       const plan = makeLoopPlan(inv0, o, rng); if (!plan) return null;
@@ -68,7 +68,7 @@
           chains.push({ kind: 'ring', pieces: slotsToPieces(outer), start: rightOf({ x: 0, y: 0, h: 0 }, TRACK_SPACING), cyclic: true, junc: false, eligible: false });
           ring = true;
           // tredobbelt: endnu en ring 77,5 mm længere ude (R1 → R2 → R3 i hjørnerne)
-          if (want.ring2 || rng() < 0.45) {
+          if (want.ring2) {
             const inv2 = { ...inv };
             const outer2 = realizeOuter(outer, inv2);
             if (outer2) {
