@@ -213,6 +213,46 @@
     return false;
   }
 
+  function pointSegmentDistance(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  }
+  function segmentsCross(a, b, c, d) {
+    const side = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    const ab = side(a, b, c), ab2 = side(a, b, d), cd = side(c, d, a), cd2 = side(c, d, b);
+    return (ab === 0 && ab2 === 0)
+      ? pointSegmentDistance(a, c, d) === 0 || pointSegmentDistance(b, c, d) === 0
+      : ab * ab2 <= 0 && cd * cd2 <= 0;
+  }
+  function insidePolygon(p, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+  }
+  /** Tjekker spormidter mod brugerens polygoner, inklusive en lille sikkerhedsafstand. */
+  function pointsClearAreas(points, areas, clearance = 35) {
+    if (!areas || !areas.length || points.length < 1) return true;
+    for (const area of areas) {
+      if (!area || area.length < 3) continue;
+      const edges = area.map((a, i) => [a, area[(i + 1) % area.length]]);
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        if (insidePolygon(p, area) || edges.some(([a, b]) => pointSegmentDistance(p, a, b) < clearance)) return false;
+        if (i && edges.some(([a, b]) => {
+          const from = points[i - 1];
+          if (segmentsCross(from, p, a, b)) return true;
+          return Math.min(pointSegmentDistance(from, a, b), pointSegmentDistance(p, a, b),
+            pointSegmentDistance(a, from, p), pointSegmentDistance(b, from, p)) < clearance;
+        })) return false;
+      }
+    }
+    return true;
+  }
+
   function bbox(pts) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of pts) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y; }
@@ -674,7 +714,7 @@
     R1, R2, R3, R4, R5, R9, SW_ANG, SW_LEN, SLIM_ANG, SLIM_LEN, SLIM_SPACING, BUFFERS, bufLeft, bufArt, TRACK_SPACING, MIN_CLEAR, JUNCTION, D2R,
     CATALOG, BY_ART, STRAIGHTS, CURVES, RADII, RNAME, ART30, BALLOON_GAP,
     mulberry32, pickW, shuffle, cnt, lenOf, geoLen, arcG, lineG, linePiece, arcPieces, handFor, norm180, cross, unit, removeArts, countOf,
-    walkGeo, walkAll, layoutChain, Grid, chainsCollide, bbox,
+    walkGeo, walkAll, layoutChain, Grid, chainsCollide, bbox, pointsClearAreas,
     capacity, cap15, totalCurveDeg, takeArc, takeArts, hasArts, findArcCombo, usageOf, spareOf, spareNow, straightCombos, findStraights,
     collectRuns, refreshRun, reorderRun, subsetSums, placeOne, placeTwo, switchable,
     obstaclePts, sideOk, buildSide, pointsState, branchPtsOf,

@@ -32,7 +32,7 @@
   const PLACES = [['Foran', .5, 0], ['Bagved', .5, 1], ['Venstre', 0, .5], ['Højre', 1, .5], ['Midt', .5, .5]];
 
   const state = { inv: {}, history: [], idx: -1, seedBase: (Date.now() & 0xffff) * 7919, place: { fx: .5, fy: 0 },
-    topologies: { loop: true, dogbone: true, p2p: true, free: true }, elements: {} };
+    topologies: { loop: true, dogbone: true, p2p: true, free: true }, elements: {}, areas: [], drawingArea: null };
 
   // ---------- persistens ----------
   const store = {
@@ -105,6 +105,7 @@
       maximize: $('optMax').checked, allSwitches: $('optAllSw').checked,
       stationTracks: st, point: st ? { x: px, y: py } : null,
       topologies: Object.fromEntries(MK.topologies.map(t => [t.id, state.topologies[t.id] !== false])), elements: { ...state.elements },
+      areas: state.areas.map(a => a.map(p => ({ x: p.x, y: p.y }))),
     };
   }
   function saveSettings() {
@@ -112,7 +113,7 @@
       W: +$('bw').value, H: +$('bh').value, margin: +$('margin').value,
       sCurves: $('optS').checked, largeRadius: $('optLarge').checked, stationTracks: +$('stTracks').value,
       maximize: $('optMax').checked, allSwitches: $('optAllSw').checked,
-      place: state.place, topologies: state.topologies, elements: state.elements,
+      place: state.place, topologies: state.topologies, elements: state.elements, areas: state.areas,
     });
   }
   function loadSettings() {
@@ -125,6 +126,7 @@
     if (s.place) state.place = s.place;
     if (s.topologies) state.topologies = { ...state.topologies, ...s.topologies };
     if (s.elements) state.elements = s.elements;
+    if (Array.isArray(s.areas)) state.areas = s.areas.filter(a => Array.isArray(a) && a.length >= 3);
   }
   function buildStrategies() {
     $('topoList').innerHTML = MK.topologies.map(t => `<label class="check"><input type="checkbox" data-topo="${t.id}" ${state.topologies[t.id] !== false ? 'checked' : ''}><span>${t.name}<small>${t.desc}</small></span></label>`).join('');
@@ -156,7 +158,7 @@
   const RUN_MS = s => s.maximize || s.allSwitches ? 2500 : 900;     // tænketid pr. bane
   let worker = null, jobId = 0, timer = null, statusTimer = null, running = false, follow = true, errors = 0, t0 = 0;
   function newWorker() {
-    try { return new Worker('js/worker.js?v=20261112-2054'); } catch (e) { return false; }
+    try { return new Worker('js/worker.js?v=20261112-2112'); } catch (e) { return false; }
   }
   function stop(msg) {
     running = false; jobId++;
@@ -280,6 +282,9 @@
     for (let x = 100; x < W; x += 100) gl.push(`M${x} 0V${H}`);
     for (let y = 100; y < H; y += 100) gl.push(`M0 ${Y(y)}H${W}`);
     out.push(`<path d="${gl.join('')}" stroke="${COL.grid}" stroke-width="2"/>`);
+    const areaPath = pts => pts.map((p, i) => (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + Y(p.y).toFixed(1)).join('') + 'Z';
+    for (const area of s.areas || []) out.push(`<path class="avoid-area" d="${areaPath(area)}"/>`);
+    if (state.drawingArea && state.drawingArea.length) out.push(`<path class="avoid-area" opacity=".65" d="${areaPath(state.drawingArea)}"/>`);
     for (let x = 0; x <= W; x += (W > 2500 ? 500 : 200)) out.push(`<text x="${x}" y="${-fs * 0.7}" font-size="${fs}" fill="${COL.gridTxt}" text-anchor="middle">${x / 10}</text>`);
     for (let y = 0; y <= H; y += (H > 2500 ? 500 : 200)) out.push(`<text x="${-fs * 0.6}" y="${Y(y) + fs / 3}" font-size="${fs}" fill="${COL.gridTxt}" text-anchor="end">${y / 10}</text>`);
     out.push(`<text x="0" y="${H + fs * 1.6}" font-size="${fs * 0.9}" fill="${COL.gridTxt}">▼ Forkant</text>`);
@@ -336,12 +341,57 @@
       const q = pt.matrixTransform(svg.getScreenCTM().inverse());
       const x = q.x, y = s.H - q.y;
       if (x < 0 || y < 0 || x > s.W || y > s.H) return;
+      if (state.drawingArea) {
+        const last = state.drawingArea[state.drawingArea.length - 1];
+        if (!last || Math.hypot(last.x - x, last.y - y) > 8) state.drawingArea.push({ x, y });
+        show();
+        return;
+      }
       const clamp = v => Math.max(0, Math.min(1, v));
       state.place = { fx: clamp((x - s.margin) / (s.W - 2 * s.margin)), fy: clamp((y - s.margin) / (s.H - 2 * s.margin)) };
       if (+$('stTracks').value === 0) $('stTracks').value = '1';
       syncUI(); start();
     });
+    svg.addEventListener('dblclick', e => {
+      if (!state.drawingArea) return;
+      e.preventDefault();
+      const area = state.drawingArea;
+      state.drawingArea = null;
+      if (area.length >= 3) state.areas.push(area);
+      saveSettings(); updateAreaControls(); show();
+    });
   }
+
+  function updateAreaControls() {
+    const drawing = !!state.drawingArea;
+    $('drawArea').textContent = drawing ? 'Annuller tegning' : 'Tegn forbudsområde';
+    $('finishArea').hidden = !drawing;
+    $('clearAreas').hidden = !state.areas.length;
+    $('areaHint').hidden = !drawing;
+    $('stage').classList.toggle('drawing', drawing);
+  }
+  $('drawArea').addEventListener('click', () => {
+    state.drawingArea = state.drawingArea ? null : [];
+    updateAreaControls();
+    if (state.history[state.idx]) show();
+    else {
+      const s = settings();
+      $('stage').innerHTML = renderSVG({ chains: [], sides: [] }, { ...s, areas: state.areas });
+      bindStage(s);
+    }
+  });
+  $('finishArea').addEventListener('click', () => {
+    if (!state.drawingArea) return;
+    const added = state.drawingArea.length >= 3;
+    if (added) state.areas.push(state.drawingArea);
+    state.drawingArea = null; saveSettings(); updateAreaControls();
+    if (state.history[state.idx]) { show(); start(); }
+    else if (added) start();
+  });
+  $('clearAreas').addEventListener('click', () => {
+    state.areas = []; state.drawingArea = null; saveSettings(); updateAreaControls();
+    if (state.history[state.idx]) { show(); start(); }
+  });
 
   function renderFacts(res, s) {
     const st = res.stats;
@@ -431,7 +481,7 @@
     if (+$('stTracks').value === 0) $('stTracks').value = '1';
     syncUI(); saveSettings(); start();
   };
-  buildInventory(); buildRef(); loadSettings(); buildStrategies(); syncUI();
+  buildInventory(); buildRef(); loadSettings(); buildStrategies(); syncUI(); updateAreaControls();
   setInventory(store.get('inv') || PRESETS.medium);
   $('prev').disabled = $('next').disabled = true;
   // ingen automatisk generering ved indlæsning – brugeren trykker selv

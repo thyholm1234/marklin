@@ -393,6 +393,7 @@
   const reqNear = (dp, legLen) => dp <= legLen + 8 ? 0 : dp < 330 ? 38 : dp < 650 ? 38 + (dp - 330) * 36 / 320 : CLEAR;
   function clearPath(link, layout, o, grid, A, B) {
     const m = o.margin, S = link.samples, Lp = link.length;
+    if (!C.pointsClearAreas(S, o.areas)) return false;
     for (const p of S) if (p.x < m || p.y < m || p.x > o.W - m || p.y > o.H - m) return false;
     const chainDist = (T, s) => {
       const ch = layout.chains[T.ci];

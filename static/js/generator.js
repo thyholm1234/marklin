@@ -416,6 +416,7 @@
       const tf = makeTf(f, o, innerW, innerH);
       const layout = { chains, sides: [] };
       chains.forEach(c => { c.start = c.attach !== undefined ? chains[c.attach].end : tf(c.start); layoutChain(c); });
+      if (!C.pointsClearAreas(chains.flatMap(c => c.samples), o.areas)) continue;
       layout.sym = symmetryCenter(chains);
       const used = {};
       // alt skal hænge sammen: en parallel ring skal forbindes med mindst én sporforbindelse
@@ -470,6 +471,7 @@
       // sikkerhedsnet: alle skinneender skal mødes, og lageret må ikke overskrides
       const an = MK.graph.analyze(layout);
       if (an.problems.length || Object.values(spareOf(inv, usageOf(layout))).some(v => v < 0)) { invalid++; continue; }
+      if (!C.pointsClearAreas(obstaclePts(layout), o.areas)) { invalid++; continue; }
       const parts = scoreLayout({ layout, chains: layout.chains, used, station, an, missing, unused, nUsed, o, innerW, innerH });
       const sc = parts.total + 0.5 * rng();
       if (!best || sc > best.sc) {
