@@ -100,7 +100,7 @@
     const finishedPts = [];
     let iterations = 0, nodeCount = 0, invalid = 0, finished = 0, retId = 0, nodeId = 0;
     let tImprove = 0, tTotal = 0;
-    let poolSeeded = false;
+    let poolSeeded = false, idleStreak = 0, generation = 0;
     const nicheLast = new Map();                         // niche → id på sidst returnerede bane
 
     const rankPick = list => {
@@ -364,10 +364,19 @@
         o.deadline = until;
         while (Date.now() < until && !(pick = pickResult())) iterate(timing);
       }
+      if (!pick && !det && archive.size && (++idleStreak >= 2 || [...archive.values()].every(e => e.saturated))) {
+        // mættet: alle nicher er udtømt. Ny generation – ryd arkiv og stråler, behold det lærte (arme, største gevinster),
+        // så sessionen bliver ved med at levere nye baner i stedet for at gå i stå
+        archive.clear(); beams[1].length = beams[3].length = beams[4].length = 0; idleStreak = 0; generation++;
+        const until = Date.now() + maxExtra * ms;
+        o.deadline = until;
+        while (Date.now() < until && !(pick = pickResult())) iterate(timing);
+      }
       if (!pick) {
-        if (!archive.size) return { error: G.noBaseError(ctx), attempts: ctx.attempts };
+        if (!archive.size && !generation) return { error: G.noBaseError(ctx), attempts: ctx.attempts };
         return { error: null, idle: true };
       }
+      idleStreak = 0;
       const replaces = pick.returnedId || null;
       const res = G.buildResult(ctx, { node: pick.node, ev: pick.ev, base: pick.base }, {
         timing, attempts: ctx.attempts, valid: ctx.cands.length, tried: (finished - before.finished), invalid: invalid - before.invalid,

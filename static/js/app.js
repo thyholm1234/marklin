@@ -160,7 +160,7 @@
   const nWorkers = () => Math.min(6, Math.max(1, (navigator.hardwareConcurrency || 2) - 1));
   let workers = [], jobId = 0, timer = null, statusTimer = null, running = false, follow = true, errors = 0, t0 = 0, deadWorkers = 0;
   function newWorker() {
-    try { return new Worker('js/worker.js?v=20261113-1000'); } catch (e) { return false; }
+    try { return new Worker('js/worker.js?v=20261113-2100'); } catch (e) { return false; }
   }
   function stop(msg) {
     running = false; jobId++;
