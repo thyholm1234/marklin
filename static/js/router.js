@@ -280,7 +280,7 @@
     const searches = [], idx = new Map(), pairs = new Map();
     const perPair = o.perPair || 12;
     for (const port of ports) {
-      if (o.deadline && searches.length >= 2 && Date.now() > o.deadline) break;       // tidsbudget: resten af portene springes over
+      if ((o.deadline || o.until) && searches.length >= 2 && Date.now() > Math.min(o.deadline || Infinity, o.until || Infinity)) break;       // tidsbudget: resten af portene springes over
       const sr = searchPort(port, spare, o);
       const si = searches.length;
       searches.push(sr);
@@ -440,9 +440,10 @@
     const box = { x0: o.margin, y0: o.margin, x1: o.W - o.margin, y1: o.H - o.margin };
     const dbg = opts.stats || null;
     const tStart = Date.now();
+    const until = o.until || Infinity;
     let count = 0;
     // ét gennemløb finder flere gyldige ruter; de bedste lægges ind én ad gangen, så længe de stadig passer
-    for (let sweep = 0; sweep < 2 && count < want; sweep++) {
+    for (let sweep = 0; sweep < 2 && count < want && Date.now() < until; sweep++) {
       const spare = spareNow(layout, inv);
       const ports = enumPorts(layout, spare);
       if (ports.length < 2) break;
@@ -486,7 +487,7 @@
       }
       if (focusPorts && (!focusPorts.length || !otherPorts.length)) break;
       const tI = Date.now();
-      const idx = makeIndex(sel, spare, { depth: opts.depth || CFG.depth, maxStates: opts.maxStates || CFG.maxStates, perState: CFG.perState, deadline: Date.now() + (opts.ms || CFG.ms), box, rng, pairOk, perPair: 12 });
+      const idx = makeIndex(sel, spare, { depth: opts.depth || CFG.depth, maxStates: opts.maxStates || CFG.maxStates, perState: CFG.perState, deadline: Math.min(Date.now() + (opts.ms || CFG.ms), until), until, box, rng, pairOk, perPair: 12 });
       if (dbg) { dbg.ms = (dbg.ms || 0) + Date.now() - tI; dbg.ports = (dbg.ports || 0) + sel.length; dbg.meetPairs = (dbg.meetPairs || 0) + idx.pairs.length; }
       const prs = idx.pairs.map(pr => ({ pr, w: rng() - ((idx.searches[pr.i].port.tag === 'ci' || idx.searches[pr.j].port.tag === 'ci') ? 0.7 : 0) })).sort((x, y) => x.w - y.w);
       for (const { pr } of prs) {
@@ -502,6 +503,7 @@
       // 2. den gamle løser (bue · lige · bue · lige · bue) på tilfældige par: tager de lange, enkle ruter
       const nPairs = feasible.length >= pick ? 0 : Math.min(opts.pairs || CFG.oldPairs, ports.length * (ports.length - 1));
       for (let t = 0; t < nPairs && feasible.length < pick; t++) {
+        if ((t & 15) === 15 && Date.now() > until) break;
         let A = inner.length && rng() < 0.6 ? inner[Math.floor(rng() * inner.length)] : ports[Math.floor(rng() * ports.length)];
         let B = inner.length > 1 && rng() < 0.3 ? inner[Math.floor(rng() * inner.length)] : ports[Math.floor(rng() * ports.length)];
         if (focusPorts) {
@@ -670,8 +672,9 @@
     if (layout.chains.filter(c => c.kind === 'extra').length >= 2) return 0;
     const loopT = MK.topologies.find(t => t.id === 'loop');
     const m = o.margin;
+    const until = o.until || Infinity;
     const sameTongue = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 1 && Math.abs(norm180(a.h - b.h)) < 0.5;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 3 && Date.now() < until; attempt++) {
       const spare = spareNow(layout, inv);
       // kun R1-kurver: dér kan buesporskifterne sidde
       const sp1 = { ...spare };
@@ -683,6 +686,7 @@
       // 1. nogle sløjfeformer (R1) med deres porte
       const shapes = [];
       for (let t = 0; t < 60 && shapes.length < 8; t++) {
+        if ((t & 15) === 15 && Date.now() > until) break;
         const att = loopT.attempt(sp1, { ...o, W: 1500, H: 1500, sCurves: false, seedPairs: 0, slimSeed: false }, rng, {}, { ring: false });
         if (!att) continue;
         const ch = att.chains[0];
@@ -696,7 +700,7 @@
       }
       // forbind den lagte sløjfe med banen (ruteløseren) og kontrollér sporgrafen; ellers rulles alt tilbage
       const tryPlaced = placed => {
-        const snap = structuredClone({ chains: layout.chains, sides: layout.sides });
+        const snap = C.cloneLayout({ chains: layout.chains, sides: layout.sides });
         const fail = () => { layout.chains = snap.chains; layout.sides = snap.sides; return false; };
         layout.chains.push(placed.ch);
         const ci = layout.chains.length - 1;
@@ -706,7 +710,7 @@
         let ok = false;
         if (A && B) {
           const g2 = obstacleGrid(layout);
-          const cands = connect(A, B, spare, { depth: 6, maxStates: 15000, box: { x0: m, y0: m, x1: o.W - m, y1: o.H - m }, limit: 12 });
+          const cands = connect(A, B, spare, { deadline: o.until, depth: 6, maxStates: 15000, box: { x0: m, y0: m, x1: o.W - m, y1: o.H - m }, limit: 12 });
           for (const c of cands) {
             if (!clearPath(c.ch, layout, o, g2, A, B)) continue;
             commit(layout, { A, B, link: c.ch });
@@ -740,21 +744,21 @@
         const box = { x0: m, y0: m, x1: o.W - m, y1: o.H - m };
         // 3. værtsporte: bredde-først fra porten giver stillinger (med garanteret rute dertil) hvor sløjfen kan sidde
         const hosts = shuffle(rng, hostPorts.slice()).slice(0, 8);
-        const deadline = Date.now() + 120;
+        const deadline = Math.min(Date.now() + 120, until);
         for (const A of hosts) {
           if (done || tries >= 10 || Date.now() > deadline) break;
           const sr = searchPort(A, spare, { depth: 4, maxStates: 2500, box, rng });
           if (!sr) continue;
           const sts = shuffle(rng, sr.r.list.slice(1));
           for (const st of sts) {
-            if (done || tries >= 10) break;
+            if (done || tries >= 10 || Date.now() > until) break;
             const eh = A.pose.h + 30 * st.k, e = { x: st.x, y: st.y, h: eh };
             for (const sh of shuffle(rng, shapes.slice())) {
               const B = sh.local[Math.floor(rng() * sh.local.length)];
               const phi = e.h + 180 - B.pose.h, cs = Math.cos(phi * D2R), sn = Math.sin(phi * D2R);
               const tf = p => ({ x: e.x + (p.x - B.pose.x) * cs - (p.y - B.pose.y) * sn, y: e.y + (p.x - B.pose.x) * sn + (p.y - B.pose.y) * cs, h: (p.h || 0) + phi });
               if (!sh.pts.every(p => { const q = tf(p); return free(q) && q.x >= m && q.y >= m && q.x <= o.W - m && q.y <= o.H - m; })) continue;
-              const ch = structuredClone(sh.ch);
+              const ch = C.cloneChains([sh.ch])[0];
               ch.start = tf({ x: 0, y: 0, h: 0 });
               layoutChain(ch);
               if (ch.samples.some(p => p.x < m || p.y < m || p.x > o.W - m || p.y > o.H - m || grid.near(p.x, p.y, q => Math.hypot(q.x - p.x, q.y - p.y) < CLEAR + 4))) continue;

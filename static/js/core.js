@@ -132,11 +132,11 @@
    * 'path' er en sammensat geometri – bruges når hovedsporet går gennem et buesporskiftes ydre ben
    * (77,5 mm lige + R1 30°).
    */
-  function walkGeo(st, g, step = 25) {
+  function walkGeoOld(st, g, step = 25) {
     const pts = [];
     if (g.kind === 'path') {
       let cur = st;
-      for (const sub of g.geos) { const w = walkGeo(cur, sub, step); pts.push(...(pts.length ? w.pts.slice(1) : w.pts)); cur = w.end; }
+      for (const sub of g.geos) { const w = walkGeoOld(cur, sub, step); pts.push(...(pts.length ? w.pts.slice(1) : w.pts)); cur = w.end; }
       return { pts, end: cur };
     }
     if (g.kind === 'line') {
@@ -156,6 +156,42 @@
     const e = pts[pts.length - 1];
     return { pts, end: { x: e.x, y: e.y, h: e.h } };
   }
+  // Lokale prøvepunkter (start i origo, retning 0) gemmes pr. geometri; et kald flytter dem med én drejning.
+  const lineCache = new Map(), arcCache = new Map();
+  function localPts(g) {
+    let t;
+    if (g.kind === 'line') {
+      t = lineCache.get(g.len);
+      if (t) return t;
+      if (lineCache.size > 4000) lineCache.clear();
+    } else {
+      const key = (g.r * 1000 + g.ang) * 4 + g.dir + 1;
+      t = arcCache.get(key);
+      if (t && t.r === g.r && t.ang === g.ang && t.dir === g.dir) return t.a;
+      if (arcCache.size > 4000) arcCache.clear();
+    }
+    const w = walkGeoOld({ x: 0, y: 0, h: 0 }, g, 25), n = w.pts.length, a = new Array(n * 3);
+    for (let i = 0; i < n; i++) { a[3 * i] = w.pts[i].x; a[3 * i + 1] = w.pts[i].y; a[3 * i + 2] = w.pts[i].h; }
+    if (g.kind === 'line') lineCache.set(g.len, a); else arcCache.set((g.r * 1000 + g.ang) * 4 + g.dir + 1, { r: g.r, ang: g.ang, dir: g.dir, a });
+    return a;
+  }
+  function walkGeo(st, g, step = 25) {
+    if (g.kind === 'path') {
+      const pts = [];
+      let cur = st;
+      for (const sub of g.geos) { const w = walkGeo(cur, sub, step); for (let i = pts.length ? 1 : 0; i < w.pts.length; i++) pts.push(w.pts[i]); cur = w.end; }
+      return { pts, end: cur };
+    }
+    if (step !== 25) return walkGeoOld(st, g, step);
+    const t = localPts(g), n = t.length / 3, pts = [];
+    const c = Math.cos(st.h * D2R), s = Math.sin(st.h * D2R), x0 = st.x, y0 = st.y, h0 = st.h;
+    for (let i = 0; i < n; i++) {
+      const lx = t[3 * i], ly = t[3 * i + 1];
+      pts.push({ x: x0 + lx * c - ly * s, y: y0 + lx * s + ly * c, h: h0 + t[3 * i + 2] });
+    }
+    const e = pts[n - 1];
+    return { pts, end: { x: e.x, y: e.y, h: e.h } };
+  }
   const walkAll = (st, geos) => { for (const g of geos) st = walkGeo(st, g).end; return st; };
 
   /** Placér alle stykker i en kæde ud fra kædens start. */
@@ -173,14 +209,57 @@
     return ch;
   }
 
+  // ---------- kloning (erstatter structuredClone) ----------
+  /** Dyb kopi af simple data (tal, tekst, lister, objekter uden prototype-tricks). */
+  function deep(v) {
+    if (v === null || typeof v !== 'object') return v;
+    if (Array.isArray(v)) { const n = v.length, a = new Array(n); for (let i = 0; i < n; i++) a[i] = deep(v[i]); return a; }
+    const o = {};
+    for (const k in v) o[k] = deep(v[k]);
+    return o;
+  }
+  const PIECE_CALC = { start: 1, end: 1, pts: 1, s0: 1, s1: 1 };
+  const CHAIN_CALC = { samples: 1, length: 1, end: 1, pieces: 1 };
+  /**
+   * Kopi af kæder: pr. stykke kun de felter der ikke kan regnes ud (art, geo, branch, run …), derefter
+   * lægges kæderne ud igen (start/end/pts/samples). structuredClone bevarer delte referencer (et stykkes
+   * start er forrige stykkes end; c.start er chains[c.attach].end); layoutChain genskaber dem.
+   */
+  function cloneChains(chains) {
+    const out = chains.map(ch => {
+      const c = {};
+      for (const k in ch) if (!CHAIN_CALC[k]) c[k] = k === 'start' ? { x: ch.start.x, y: ch.start.y, h: ch.start.h } : deep(ch[k]);
+      c.pieces = ch.pieces.map(p => { const q = {}; for (const k in p) if (!PIECE_CALC[k]) q[k] = deep(p[k]); return q; });
+      return c;
+    });
+    out.forEach(c => { if (c.attach !== undefined) c.start = out[c.attach].end; layoutChain(c); });
+    return out;
+  }
+  function cloneSides(sides) {
+    return sides.map(sd => {
+      const o = {};
+      for (const k in sd) o[k] = deep(sd[k]);
+      return o;
+    });
+  }
+  /** Kopi af en hel bane { chains, sides, sym, … }. */
+  function cloneLayout(layout) {
+    const out = {};
+    for (const k in layout) out[k] = k === 'chains' ? cloneChains(layout.chains) : k === 'sides' ? cloneSides(layout.sides) : deep(layout[k]);
+    return out;
+  }
+
   class Grid {
-    constructor(cell) { this.cell = cell; this.m = new Map(); }
-    add(p) { const k = Math.floor(p.x / this.cell) + ',' + Math.floor(p.y / this.cell); let a = this.m.get(k); if (!a) this.m.set(k, a = []); a.push(p); }
+    constructor(cell) { this.cell = cell; this.inv = 1 / cell; this.m = new Map(); }
+    add(p) { const k = (Math.floor(p.x * this.inv) + 32768) * 65536 + (Math.floor(p.y * this.inv) + 32768); let a = this.m.get(k); if (!a) this.m.set(k, a = []); a.push(p); }
     near(x, y, fn) {
-      const cx = Math.floor(x / this.cell), cy = Math.floor(y / this.cell);
-      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-        const a = this.m.get((cx + i) + ',' + (cy + j));
-        if (a) for (const p of a) if (fn(p) === true) return true;
+      const cx = Math.floor(x * this.inv) + 32768, cy = Math.floor(y * this.inv) + 32768, m = this.m;
+      for (let i = -1; i <= 1; i++) {
+        const base = (cx + i) * 65536 + cy;
+        for (let j = -1; j <= 1; j++) {
+          const a = m.get(base + j);
+          if (a) for (let n = 0; n < a.length; n++) if (fn(a[n]) === true) return true;
+        }
       }
       return false;
     }
@@ -697,6 +776,8 @@
     }
     return [half1, half2];
   }
+  /** Kopi af indstillingerne med en delfrist (o.until): højst frac af det samlede budget, og aldrig efter hovedfristen. */
+  const subDeadline = (o, frac) => Object.assign({}, o, { until: Math.min(o.until === undefined ? Infinity : o.until, o.deadline === undefined ? Infinity : o.deadline, Date.now() + frac * (o.timeBudget || 1000)) });
   let runCounter = 0;
   const newRunId = () => ++runCounter;
   function slotsToPieces(slots) {
@@ -714,11 +795,11 @@
     R1, R2, R3, R4, R5, R9, SW_ANG, SW_LEN, SLIM_ANG, SLIM_LEN, SLIM_SPACING, BUFFERS, bufLeft, bufArt, TRACK_SPACING, MIN_CLEAR, JUNCTION, D2R,
     CATALOG, BY_ART, STRAIGHTS, CURVES, RADII, RNAME, ART30, BALLOON_GAP,
     mulberry32, pickW, shuffle, cnt, lenOf, geoLen, arcG, lineG, linePiece, arcPieces, handFor, norm180, cross, unit, removeArts, countOf,
-    walkGeo, walkAll, layoutChain, Grid, chainsCollide, bbox, pointsClearAreas,
+    walkGeo, walkGeoOld, walkAll, layoutChain, insidePolygon, deep, cloneChains, cloneSides, cloneLayout, Grid, chainsCollide, bbox, pointsClearAreas,
     capacity, cap15, totalCurveDeg, takeArc, takeArts, hasArts, findArcCombo, usageOf, spareOf, spareNow, straightCombos, findStraights,
     collectRuns, refreshRun, reorderRun, subsetSums, placeOne, placeTwo, switchable,
     obstaclePts, sideOk, buildSide, pointsState, branchPtsOf,
     endLoopSpecs, pickSpec, endLoopPieces, balloonChain,
-    randomComposition, chooseRadius, pushArc, capsOf, composeRun, matchRun, realize, newRunId, slotsToPieces, sigOf, rightOf,
+    subDeadline, randomComposition, chooseRadius, pushArc, capsOf, composeRun, matchRun, realize, newRunId, slotsToPieces, sigOf, rightOf,
   };
 })(typeof self !== 'undefined' ? self : globalThis);

@@ -144,7 +144,7 @@
     opts.sort((x, y) => y.val - x.val);
     let best = null;
     for (const opt of opts.slice(0, 5)) {
-      const trial = structuredClone({ chains: layout.chains, sides: layout.sides });
+      const trial = C.cloneLayout({ chains: layout.chains, sides: layout.sides });
       const res = tryStation(trial, inv, o, rng, opt);
       if (!res.tracks) continue;
       const dist = pt ? Math.hypot(res.center.x - pt.x, res.center.y - pt.y) : 0;
@@ -1054,7 +1054,8 @@
     const used = {};
     const add = (id, n) => { if (n) used[id] = (used[id] || 0) + n; };
     let prev = -1;
-    for (let round = 0; round < 12; round++) {
+    const until = o.until === undefined ? Infinity : o.until;
+    for (let round = 0; round < 12 && Date.now() < until; round++) {
       const left = switchesLeft(layout, inv);
       if (!left || (left === prev && round > 1)) break;
       prev = left;
@@ -1067,7 +1068,7 @@
       add('tstation', addThreeWayStation(layout, inv, o, rng));
       for (let k = 0; k < 3; k++) { const n = addSlimPassing(layout, inv, o, rng); if (!n) break; add('spassing', n); }
       add('passing', addPassing(layout, inv, o, rng, 3));
-      if (MK.router && (o.elements || {}).link !== 'off') add('link', MK.router.addLinks(layout, inv, o, rng, 2));
+      if (MK.router && (o.elements || {}).link !== 'off') add('link', MK.router.addLinks(layout, inv, C.subDeadline(o, 0.25), rng, 2));
       if (round < 1) continue;
       add('threeway', addThreeWay(layout, inv, o, rng, true));
       add('csiding', addCurveSidings(layout, inv, o, rng, 8, true));

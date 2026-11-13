@@ -1,0 +1,73 @@
+### mine 3000 1500 16 - 2500
+SUM n=16 fejl=0 point(median/bedst)=1761/2208 skinner(median)=58 tried(median)=5 ms(median/maks)=2736/5010
+### mine 2050 1200 16 - 2500
+1 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+2 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+3 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+5 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+6 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+7 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+9 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+10 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+11 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+13 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+14 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+15 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+SUM n=16 fejl=12 point(median/bedst)=1249/1849 skinner(median)=36 tried(median)=6 ms(median/maks)=2618/3802
+### mine 4500 2500 16 - 2500
+SUM n=16 fejl=0 point(median/bedst)=1873/2796 skinner(median)=106 tried(median)=4 ms(median/maks)=3340/6169
+### mine 3000 1500 16 - 2500 {"allSwitches":true}
+SUM n=16 fejl=0 point(median/bedst)=622/1261 skinner(median)=50 tried(median)=3 ms(median/maks)=2720/5728
+### mine 3000 1500 16 - 2500 {"topologies":{"free":true}}
+SUM n=16 fejl=0 point(median/bedst)=1008/1698 skinner(median)=55 tried(median)=5 ms(median/maks)=2958/5356
+### mine 3000 1500 16 - 2500 {"elements":{"inner":"must"}}
+SUM n=16 fejl=0 point(median/bedst)=-3275/0 skinner(median)=57 tried(median)=4 ms(median/maks)=2724/5704
+### mine 3000 1500 16 - 2500 {"areas":[[{"x":2000,"y":900},{"x":3000,"y":900},{"x":3000,"y":1500},{"x":2000,"y":1500}]]}
+3 ERR Der er ikke nok sammenhængende plads uden for forbudsområderne. Gør et område mindre, flyt det eller fjern et område.
+7 ERR Der er ikke nok sammenhængende plads uden for forbudsområderne. Gør et område mindre, flyt det eller fjern et område.
+11 ERR Der er ikke nok sammenhængende plads uden for forbudsområderne. Gør et område mindre, flyt det eller fjern et område.
+15 ERR Der er ikke nok sammenhængende plads uden for forbudsområderne. Gør et område mindre, flyt det eller fjern et område.
+SUM n=16 fejl=4 point(median/bedst)=4382/5882 skinner(median)=49 tried(median)=4 ms(median/maks)=2591/4360
+### large 3000 1500 16 - 2500
+2 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+3 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+7 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+10 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+11 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+14 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+15 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+SUM n=16 fejl=7 point(median/bedst)=1838/3626 skinner(median)=44 tried(median)=11 ms(median/maks)=2583/2865
+### large 4500 2500 16 - 2500 {"allSwitches":true}
+3 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+7 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+11 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+15 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+SUM n=16 fejl=4 point(median/bedst)=789/2882 skinner(median)=86 tried(median)=3 ms(median/maks)=2709/3334
+### medium 2050 1200 16 - 900 {"maximize":false}
+1 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+2 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+3 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+5 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+6 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+7 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+9 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+10 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+11 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+13 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+14 ERR Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.
+15 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+SUM n=16 fejl=12 point(median/bedst)=268/1708 skinner(median)=30 tried(median)=1 ms(median/maks)=915/1072
+### small 1600 1000 16 - 2500
+1 ERR Ingen af de valgte grundformer kan bygges med lageret (Hundeben). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+2 ERR Ingen af de valgte grundformer kan bygges med lageret (Punkt-til-punkt med ballonsløjfer). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+3 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+5 ERR Ingen af de valgte grundformer kan bygges med lageret (Hundeben). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+6 ERR Ingen af de valgte grundformer kan bygges med lageret (Punkt-til-punkt med ballonsløjfer). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+7 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+9 ERR Ingen af de valgte grundformer kan bygges med lageret (Hundeben). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+10 ERR Ingen af de valgte grundformer kan bygges med lageret (Punkt-til-punkt med ballonsløjfer). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+11 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+13 ERR Ingen af de valgte grundformer kan bygges med lageret (Hundeben). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+14 ERR Ingen af de valgte grundformer kan bygges med lageret (Punkt-til-punkt med ballonsløjfer). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+15 ERR Ingen af de valgte grundformer kan bygges med lageret (Ottetal (krydsning)). Tilføj flere kurver/sporskifter eller tillad flere grundformer.
+SUM n=16 fejl=12 point(median/bedst)=288/288 skinner(median)=18 tried(median)=271 ms(median/maks)=2503/2509

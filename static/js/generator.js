@@ -30,35 +30,33 @@
     ];
     let score = 0;
     for (const t of targets) {
-      let d = Infinity;
-      for (const p of points) d = Math.min(d, Math.hypot(p.x - t.x, p.y - t.y));
-      score += Math.max(0, 1 - d / 700);
+      let d2 = Infinity;
+      for (let i = 0; i < points.length; i++) { const dx = points[i].x - t.x, dy = points[i].y - t.y, e = dx * dx + dy * dy; if (e < d2) d2 = e; }
+      score += Math.max(0, 1 - Math.sqrt(d2) / 700);
     }
     return score / targets.length;
   }
+  /** De frie celler (raster 200 mm uden for forbudsområderne). Afhænger kun af o, så de gemmes på o. */
+  function freeCellsOf(o) {
+    if (o.freeCells) return o.freeCells;
+    const free = [];
+    if (o.areas && o.areas.length) {
+      for (let x = o.margin; x <= o.W - o.margin; x += 200) {
+        for (let y = o.margin; y <= o.H - o.margin; y += 200) {
+          if (!o.areas.some(a => C.insidePolygon({ x, y }, a))) free.push({ x, y });
+        }
+      }
+    }
+    return o.freeCells = free;
+  }
   function freeSpaceCoverage(points, o) {
     if (!points.length || !o.areas || !o.areas.length) return 0;
-    const inside = (p, poly) => {
-      let yes = false;
-      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        const a = poly[i], b = poly[j];
-        if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) yes = !yes;
-      }
-      return yes;
-    };
-    const free = [];
-    for (let x = o.margin; x <= o.W - o.margin; x += 200) {
-      for (let y = o.margin; y <= o.H - o.margin; y += 200) {
-        if (!(o.areas || []).some(a => inside({ x, y }, a))) free.push({ x, y });
-      }
-    }
+    const free = freeCellsOf(o);
     if (!free.length) return 0;
+    const g = new C.Grid(110);
+    for (let i = 0; i < points.length; i++) g.add(points[i]);
     let covered = 0;
-    for (const q of free) {
-      let near = Infinity;
-      for (const p of points) near = Math.min(near, Math.hypot(p.x - q.x, p.y - q.y));
-      if (near < 110) covered++;
-    }
+    for (const q of free) if (g.near(q.x, q.y, p => Math.hypot(p.x - q.x, p.y - q.y) < 110)) covered++;
     return covered / free.length;
   }
   function placementFor(chains, f, o, innerW, innerH) {
@@ -72,13 +70,15 @@
       return out;
     };
     const c = Math.cos(f.rot * D2R), s = Math.sin(f.rot * D2R);
+    // punkterne drejes én gang; pr. forskydning flyttes de bare (objekterne genbruges)
+    const rot = [];
+    for (const ch of chains) for (const p of ch.samples) rot.push({ rx: p.x * c - p.y * s, ry: p.x * s + p.y * c });
+    const points = rot.map(() => ({ x: 0, y: 0 }));
     let best = null;
     for (const x of values(maxX)) for (const y of values(maxY)) {
       const tx = o.margin + (innerW - f.b.w) / 2 - f.b.x0 + x;
       const ty = o.margin + (innerH - f.b.h) / 2 - f.b.y0 + y;
-      const points = chains.flatMap(ch => ch.samples.map(p => ({
-        x: p.x * c - p.y * s + tx, y: p.x * s + p.y * c + ty,
-      })));
+      for (let i = 0; i < rot.length; i++) { points[i].x = rot[i].rx + tx; points[i].y = rot[i].ry + ty; }
       if (!C.pointsClearAreas(points, o.areas)) continue;
       const b = C.bbox(points);
       const edgeUse = (b.x1 - b.x0) + (b.y1 - b.y0);
@@ -90,12 +90,22 @@
     return best ? { x: best.x, y: best.y } : null;
   }
   function fitsOf(chains, innerW, innerH) {
-    const allS = chains.flatMap(ch => ch.samples);
+    // omskrevet kasse for drejning 0° og 90° i én gennemgang (ingen mellemlister)
     const out = [];
-    for (const rot of [0, 90]) {
-      const c = Math.cos(rot * D2R), s = Math.sin(rot * D2R);
-      const b = bbox(allS.map(p => ({ x: p.x * c - p.y * s, y: p.x * s + p.y * c })));
-      if (b.w <= innerW && b.h <= innerH) out.push({ rot, b });
+    const rots = [0, 90].map(rot => ({ rot, c: Math.cos(rot * D2R), s: Math.sin(rot * D2R), x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }));
+    for (let ci = 0; ci < chains.length; ci++) {
+      const S = chains[ci].samples;
+      for (let i = 0; i < S.length; i++) {
+        const px = S[i].x, py = S[i].y;
+        for (let r = 0; r < 2; r++) {
+          const R = rots[r], x = px * R.c - py * R.s, y = px * R.s + py * R.c;
+          if (x < R.x0) R.x0 = x; if (x > R.x1) R.x1 = x; if (y < R.y0) R.y0 = y; if (y > R.y1) R.y1 = y;
+        }
+      }
+    }
+    for (const R of rots) {
+      const b = { x0: R.x0, y0: R.y0, x1: R.x1, y1: R.y1, w: R.x1 - R.x0, h: R.y1 - R.y0 };
+      if (b.w <= innerW && b.h <= innerH) out.push({ rot: R.rot, b });
     }
     return out;
   }
@@ -343,7 +353,9 @@
     return p;
   }
 
-  function generate(inv, opts) {
+  // ---------- sammenhæng: alt der er fælles for generate og sessionen ----------
+  /** Samler indstillinger, tilladte grundformer og faste størrelser. Returnerer { error } hvis ingen grundform kan bygges. */
+  function makeContext(inv, opts) {
     const o = Object.assign({
       W: 2000, H: 1200, margin: 50, sCurves: true, largeRadius: false,
       stationTracks: 1, point: null, timeBudget: 700, maxAttempts: 200000, maximize: false, allSwitches: false,
@@ -356,10 +368,8 @@
     o.seedPairs = Math.max(o.stationTracks || 0, mode('crossover') !== 'off' || mode('wye') !== 'off' ? 1 : 0);
     o.slimSeed = mode('spassing') !== 'off' && cnt(inv, '24711') > 0 && cnt(inv, '24712') > 0 && cnt(inv, '24912') >= 2;
     const progress = (msg, extra) => { if (o.onProgress) try { o.onProgress({ msg, ...extra }); } catch (e) { /* ignorer */ } };
-
     // forbered tilladte grundformer
     const ringMust = mode('ring') === 'must';
-    const tripleRingMust = mode('ring3') === 'must';
     const topos = [], failed = [];
     for (const t of MK.topologies) {
       if (o.topologies[t.id] === false) continue;
@@ -370,28 +380,36 @@
     if (!topos.length) {
       return { error: 'Ingen af de valgte grundformer kan bygges med lageret' + (failed.length ? ` (${failed.join(', ')})` : '') + '. Tilføj flere kurver/sporskifter eller tillad flere grundformer.' };
     }
-    const avoid = new Set(o.avoid);
-    const innerW = o.W - 2 * o.margin, innerH = o.H - 2 * o.margin;
-    const diag = Math.hypot(o.W, o.H);
-    const totalPieces = CATALOG.reduce((a, p) => a + cnt(inv, p.art), 0);
-    const t0 = Date.now();
-    const deadline = t0 + o.timeBudget;
-    const long = o.maximize || o.allSwitches;
-    const phase1 = t0 + (long ? o.timeBudget * 0.3 : o.timeBudget);
-    const SW = MK.switches.SWITCH_ARTS, switchesTotal = SW.reduce((a, x) => a + cnt(inv, x), 0);
+    const d = o.stationTracks || 0;
+    const SW = MK.switches.SWITCH_ARTS;
+    return {
+      inv, o, mode, rng, progress, topos, ringMust, tripleRingMust: mode('ring3') === 'must',
+      avoid: new Set(o.avoid),
+      innerW: o.W - 2 * o.margin, innerH: o.H - 2 * o.margin, diag: Math.hypot(o.W, o.H),
+      totalPieces: CATALOG.reduce((a, p) => a + cnt(inv, p.art), 0),
+      long: o.maximize || o.allSwitches,
+      switchesTotal: SW.reduce((a, x) => a + cnt(inv, x), 0),
+      musts: MK.elements.filter(e => mode(e.id) === 'must' && e.apply).map(e => e.id),
+      reserve: { '24188': 2 * d + d * (d - 1) + 2, '24172': 2 * d + d * (d - 1) + 2 },
+      // fase 1
+      tw: topos.map(x => {
+        if (!o.areas || !o.areas.length) return TOPO_W[x.t.id] || 1;
+        if (x.t.id === 'loop') return 2;
+        if (x.t.id === 'free') return 20;
+        return TOPO_W[x.t.id] || 1;
+      }),
+      seen: new Set(), cands: [], attempts: 0, ringFound: false, lastP: 0,
+    };
+  }
 
-    // ---------- fase 1: mange gyldige grundformer ----------
-    const cands = [], seen = new Set();
-    let attempts = 0, ringFound = false, lastP = 0;
-    const tw = topos.map(x => {
-      if (!o.areas || !o.areas.length) return TOPO_W[x.t.id] || 1;
-      if (x.t.id === 'loop') return 2;
-      if (x.t.id === 'free') return 20;
-      return TOPO_W[x.t.id] || 1;
-    });
-    while (attempts < o.maxAttempts && Date.now() < phase1) {
-      attempts++;
-      if (Date.now() - lastP > 250) { lastP = Date.now(); progress('Finder grundformer', { attempts, valid: cands.length }); }
+  // ---------- fase 1 (T0): gyldige grundformer ----------
+  /** Finder grundformer til ctx.cands indtil fristen, maxNew nye er fundet, eller forsøgene er brugt. Returnerer antal nye. */
+  function findBases(ctx, until, maxNew = Infinity) {
+    const { inv, o, mode, rng, topos, tw, innerW, innerH, diag, totalPieces, avoid, seen, cands } = ctx;
+    let found = 0;
+    while (ctx.attempts < o.maxAttempts && found < maxNew && Date.now() < until) {
+      ctx.attempts++;
+      if (Date.now() - ctx.lastP > 250) { ctx.lastP = Date.now(); ctx.progress('Finder grundformer', { attempts: ctx.attempts, valid: cands.length }); }
       const tp = pickW(rng, topos, tw);
       const want = {
         ring: mode('ring') === 'must' || (mode('ring') === 'may' && rng() < (o.areas && o.areas.length ? 0.9 : 0.5)),
@@ -399,9 +417,9 @@
       };
       const att = tp.t.attempt(inv, o, rng, tp.prep, want);
       if (!att) continue;
-      if (tripleRingMust && att.ring !== 2) continue;
+      if (ctx.tripleRingMust && att.ring !== 2) continue;
       if (seen.has(att.sig)) continue; seen.add(att.sig);
-      if (ringMust && !att.ring) continue;
+      if (ctx.ringMust && !att.ring) continue;
       att.topo = tp.t.id;
       att.chains.forEach(layoutChain);
       if (att.chains.some(ch => ch.cyclic && Math.hypot(ch.end.x - ch.start.x, ch.end.y - ch.start.y) > 3)) continue;
@@ -425,12 +443,11 @@
         const virtue = 0.3 * (att.reverseLoops || 0) + (att.dslip ? 0.3 : 0) + (att.ring ? 0.3 * att.ring : 0);
         // plads indeni: ruteløseren skal kunne lægge ruter og sløjfer inde i banen (R1-sløjfe ≈ 800 mm)
         const room = Math.min(1, Math.min(f.b.w, f.b.h) / Math.min(1250, Math.min(innerW, innerH)));
-        const placed = att.chains.flatMap(ch => ch.samples.map(p => {
-          const c = Math.cos(f.rot * D2R), s = Math.sin(f.rot * D2R);
-          const tx = o.margin + (innerW - f.b.w) / 2 - f.b.x0 + f.offset.x;
-          const ty = o.margin + (innerH - f.b.h) / 2 - f.b.y0 + f.offset.y;
-          return { x: p.x * c - p.y * s + tx, y: p.x * s + p.y * c + ty };
-        }));
+        const c = Math.cos(f.rot * D2R), s = Math.sin(f.rot * D2R);
+        const tx = o.margin + (innerW - f.b.w) / 2 - f.b.x0 + f.offset.x;
+        const ty = o.margin + (innerH - f.b.h) / 2 - f.b.y0 + f.offset.y;
+        const placed = [];
+        for (const ch of att.chains) for (const p of ch.samples) placed.push({ x: p.x * c - p.y * s + tx, y: p.x * s + p.y * c + ty });
         const coverage = spaceCoverage(placed, o);
         const freeCoverage = freeSpaceCoverage(placed, o);
         f.score = o.maximize
@@ -440,15 +457,193 @@
         if (o.areas && o.areas.length) f.score += 6 * freeCoverage;
       }
       fits.sort((a, b) => b.score - a.score);
-      if (att.ring) ringFound = true;
-      cands.push({ att, rot: fits[0].rot, b: fits[0].b, offset: fits[0].offset, score: fits[0].score, avoided: avoid.has(att.sig) });
+      if (att.ring) ctx.ringFound = true;
+      cands.push({ att, rot: fits[0].rot, b: fits[0].b, offset: fits[0].offset, score: fits[0].score, avoided: avoid.has(att.sig), topo: att.topo, sig: att.sig });
+      found++;
     }
+    return found;
+  }
+
+  // ---------- fase 2: trin ----------
+  // T1: grundform → vokset, evt. med stammer, placeret på pladen. valg = { frac, stems }; growMs = væksttid ved frac 1.
+  function stepGrow(ctx, base, valg, growMs, timing) {
+    const { inv, o, rng, innerW, innerH, reserve } = ctx;
+    const chains = C.cloneChains(base.att.chains);
+    let f = { rot: base.rot, b: base.b, offset: base.offset || { x: 0, y: 0 } };
+    let stemmed = 0;
+    if (o.maximize) {
+      const per = growMs * valg.frac;
+      const tG = Date.now();
+      if (per > 0) growLayout(chains, inv, o, rng, o.noTime ? Infinity : Date.now() + per, reserve, innerW, innerH);
+      if (timing) timing.grow = (timing.grow || 0) + Date.now() - tG;
+      if (valg.stems) stemmed = addStems(chains, rng, 1 + Math.floor(rng() * 2), innerW, innerH);
+      const fs = fitsOf(chains, innerW, innerH);
+      if (!fs.length) return null;
+      fs.sort((a, b) => (a.b.w * a.b.h) - (b.b.w * b.b.h));
+      f = fs[Math.floor(rng() * fs.length)];
+      f.offset = placementFor(chains, f, o, innerW, innerH);
+      if (!f.offset) return null;
+    }
+    const tf = makeTf(f, o, innerW, innerH, f.offset);
+    const layout = { chains, sides: [] };
+    chains.forEach(c => { c.start = c.attach !== undefined ? chains[c.attach].end : tf(c.start); layoutChain(c); });
+    if (!C.pointsClearAreas(chains.flatMap(c => c.samples), o.areas)) return null;
+    layout.sym = symmetryCenter(chains);
+    return { layout, used: {}, station: null, stemmed, f };
+  }
+  // T2: ringe forbindes med hovedsporet, løse ringe fjernes. valg.ccross = antal hjørneforbindelser (1–3).
+  function stepRings(ctx, node, valg) {
+    const { inv, o, mode, rng } = ctx;
+    const { layout, used } = node, chains = layout.chains;
+    // alt skal hænge sammen: en parallel ring skal forbindes med mindst én sporforbindelse
+    if (chains.some(c => c.kind === 'ring')) {
+      let n = 0;
+      // buesporskifter i hjørnerne først (kræver hverken 24224 eller alm. sporskifter), så alm. sporforbindelser
+      if (mode('ccross') !== 'off') { const c = MK.router.addCornerCross(layout, inv, o, rng, valg.ccross); if (c) { used.ccross = c; n += c; } }
+      if (mode('crossover') !== 'off') for (let k = 0; k < 3 && n < 4; k++) { const c = MK.elements.find(e => e.id === 'crossover').apply(layout, inv, o, rng); if (c) { used.crossover = (used.crossover || 0) + c; n += c; } }
+      // ringe der ikke er forbundet (direkte eller via en anden ring) med hovedsporet fjernes
+      const conn = new Set(chains.map((c, i) => c.kind === 'ring' ? -1 : i).filter(i => i >= 0));
+      for (let grow = true; grow;) {
+        grow = false;
+        for (const sd of layout.sides) if (sd.link && conn.has(sd.link[0]) !== conn.has(sd.link[1])) { sd.link.forEach(i => conn.add(i)); grow = true; }
+      }
+      for (let i = chains.length - 1; i >= 0; i--) {
+        if (chains[i].kind !== 'ring' || conn.has(i)) continue;
+        layout.sides = layout.sides.filter(sd => !(sd.link && sd.link.includes(i)));
+        chains.splice(i, 1);
+      }
+    }
+    // ringe og ballonsløjfer må også få sporskifter, stationer og ruter (sporgrafen kontrollerer resultatet)
+    chains.forEach(c => { if (c.kind === 'ring' || c.kind === 'balloon') c.eligible = true; });
+  }
+  // Rækkefølgen af 'Kan'-elementerne: { t4: ruter og stationer, t5: sidespor }. routesFirst: ruter før stationer.
+  const STATIONS = ['cfan', 'tstation', 'cstation', 'cpassing', 'spassing', 'passing'];
+  function orderFor(ctx, node, routesFirst) {
+    const { rng } = ctx;
+    const routes = shuffle(rng, ['cutoff', 'wye', 'stub', 'link']);
+    if (node.stemmed) { routes.splice(routes.indexOf('link'), 1); routes.unshift('link'); }
+    return {
+      t4: ['ccross', 'crossover', 'inner', ...(routesFirst ? [...routes, ...STATIONS] : [...STATIONS, ...routes])],
+      t5: shuffle(rng, ['threeway', 'csiding', 'siding']),
+    };
+  }
+  /** Ét element på banen med delfrist. again: tillad et element, der allerede er brugt (forbedringsfasen). */
+  function applyElement(ctx, node, id, timing, again) {
+    const { inv, o, mode, rng } = ctx;
+    const el = MK.elements.find(e => e.id === id);
+    if (!el || !el.apply || mode(id) === 'off' || (!again && node.used[id])) return 0;
+    const tE = Date.now();
+    const n = el.apply(node.layout, inv, C.subDeadline(o, id === 'inner' || id === 'link' ? 0.25 : 0.1), rng);
+    if (timing) timing[id] = (timing[id] || 0) + Date.now() - tE;
+    if (n) node.used[id] = (node.used[id] || 0) + n;
+    return n || 0;
+  }
+  /** 'Skal'-elementer, derefter stationen (brugerens punkt). order = alle elementer i rækkefølge (de 'Skal' tages først). */
+  function stepMust(ctx, node, order, timing) {
+    const { inv, o, mode, rng } = ctx;
+    for (const id of order.filter(id => mode(id) === 'must')) applyElement(ctx, node, id, timing);
+    const tS = Date.now();
+    node.station = MK.station.addStation(node.layout, inv, C.subDeadline(o, 0.1), rng);
+    if (timing) timing.station = (timing.station || 0) + Date.now() - tS;
+  }
+  /**
+   * 'Kan'-elementer i den givne rækkefølge. hooks.decide(id) afgør om elementet prøves; hooks.before(id) /
+   * hooks.after(id, n, ms) lader kalderen måle gevinsten pr. element.
+   */
+  function stepCan(ctx, node, ids, hooks, timing) {
+    const { mode } = ctx;
+    for (const id of ids) {
+      if (mode(id) === 'must' || mode(id) === 'off' || node.used[id]) continue;
+      if (hooks && hooks.decide && !hooks.decide(id)) continue;
+      if (hooks && hooks.before) hooks.before(id);
+      const t = Date.now();
+      const n = applyElement(ctx, node, id, timing);
+      if (hooks && hooks.after) hooks.after(id, n, Date.now() - t);
+    }
+  }
+  function stepFill(ctx, node, timing) {
+    const { inv, o, rng } = ctx;
+    const t = Date.now();
+    const f = MK.switches.fillSwitches(node.layout, inv, C.subDeadline(o, 0.25), rng);
+    for (const k in f) node.used[k] = (node.used[k] || 0) + f[k];
+    if (timing) timing.fill = (timing.fill || 0) + Date.now() - t;
+  }
+  /** Sikkerhedsnet + point for en bane. Returnerer { ok:false } hvis den er ugyldig. */
+  function evaluate(ctx, node) {
+    const { inv, o, innerW, innerH } = ctx;
+    const { layout, used, station } = node;
+    const unused = MK.switches.switchesLeft(layout, inv);
+    const missing = ctx.musts.filter(id => !used[id]);
+    const nUsed = countUsed(layout);
+    // sikkerhedsnet: alle skinneender skal mødes, og lageret må ikke overskrides
+    const an = MK.graph.analyze(layout);
+    if (an.problems.length || Object.values(spareOf(inv, usageOf(layout))).some(v => v < 0)) return { ok: false };
+    if (!C.pointsClearAreas(obstaclePts(layout), o.areas)) return { ok: false };
+    const parts = scoreLayout({ layout, chains: layout.chains, used, station, an, missing, unused, nUsed, o, innerW, innerH });
+    if (o.areas && o.areas.length) {
+      const covered = freeSpaceCoverage(obstaclePts(layout), o);
+      parts.freeSpace = covered * 8000;
+      parts.total += parts.freeSpace;
+    }
+    return { ok: true, parts, an, unused, missing, nUsed, total: parts.total };
+  }
+  /** Resultatet i det format generate returnerer. best = { node, ev, base } */
+  function buildResult(ctx, best, extraStats) {
+    const { inv, o, totalPieces, switchesTotal } = ctx;
+    const { layout, used, station } = best.node, ev = best.ev, ch = best.base;
+    for (const p of [...layout.chains.flatMap(c => c.pieces), ...layout.sides.flatMap(s => s.pieces)]) {
+      if (p.branch) p.branchPtsList = C.branchPtsOf(p);
+    }
+    const usage = usageOf(layout);
+    const arcR = layout.chains.flatMap(c => c.pieces).filter(p => p.geo.kind === 'arc' && !p.virtual && p.art !== '24224' && p.art !== '24206').map(p => p.geo.r);
+    const mainLen = layout.chains.filter(c => c.kind === 'main' || c.kind === 'line').reduce((a, c) => a + c.pieces.filter(p => !p.virtual).reduce((s, p) => s + geoLen(p.geo), 0), 0);
+    const ring = layout.chains.find(c => c.kind === 'ring');
+    const strat = [{ id: ch.att.topo, name: ch.att.dslip ? ch.att.name : MK.topologies.find(t => t.id === ch.att.topo).name, n: 1 }];
+    if (ring) strat.push({ id: 'ring', name: 'Parallel ring', n: 1 });
+    if (ring && layout.chains.filter(c => c.kind === 'ring').length >= 2) {
+      strat.push({ id: 'ring3', name: 'Tresporet lukket sløjfe', n: 1 });
+    }
+    if (station && station.tracks) strat.push({ id: 'station', name: `Station (${station.tracks + 1} spor)`, n: 1 });
+    for (const e of MK.elements) if (used[e.id]) strat.push({ id: e.id, name: e.name, n: used[e.id] });
+    return {
+      chains: layout.chains, sides: layout.sides, used: usage, spare: spareOf(inv, usage), sig: ch.att.sig,
+      station, point: o.point, strategies: strat, score: ev.parts.total, scoreParts: ev.parts,
+      missing: ev.missing.map(id => MK.elements.find(e => e.id === id).name),
+      stats: Object.assign({
+        name: ch.att.name, topo: ch.att.topo, length: mainLen, double: !!ring, outerLength: ring ? ring.length : 0,
+        reverseLoops: ev.an.reverse, bbox: bbox(obstaclePts(layout)),
+        radii: [...new Set(arcR)].sort((a, b) => a - b).map(r => RNAME[r]),
+        sidings: used.siding || 0, crossovers: (used.crossover || 0) + (used.ccross || 0), stationTracks: station ? station.tracks : 0,
+        routes: ev.an.routes, piecesUsed: ev.nUsed, piecesTotal: totalPieces,
+        switchesUsed: switchesTotal - ev.unused, switchesTotal, rough: layout.sides.filter(sd => sd.rough).length,
+      }, extraStats),
+    };
+  }
+  const noBaseError = ctx => (ctx.o.areas && ctx.o.areas.length)
+    ? 'Der er ikke nok sammenhængende plads uden for forbudsområderne. Gør et område mindre, flyt det eller fjern et område.'
+    : 'Kunne ikke placere en bane. Prøv igen eller med længere tænketid.';
+
+  // ---------- generate ----------
+  function generate(inv, opts) {
+    const ctx = makeContext(inv, opts);
+    if (ctx.error) return { error: ctx.error };
+    const { o, mode, rng, avoid, long } = ctx;
+    // 'flest skinner' / 'alle sporskifter': den vedvarende søgning (search.js). Kort tilstand beholder løkken herunder.
+    if (long && MK.createSession && !o.legacy) return MK.createSession(inv, opts).next(o.timeBudget);
+    const t0 = Date.now();
+    const deadline = t0 + o.timeBudget;
+    const phase1 = t0 + (long ? o.timeBudget * 0.3 : o.timeBudget);
+    o.deadline = long ? deadline : deadline + 2500;       // elementerne får delfrister under denne (o.until)
+
+    // ---------- fase 1: mange gyldige grundformer ----------
+    findBases(ctx, phase1);
+    const { cands } = ctx;
     let pool = cands.filter(c => !c.avoided);
     if (!pool.length) pool = cands;
     const anyMust = MK.elements.some(e => mode(e.id) === 'must' && e.apply);
-    if (!o.maximize && !anyMust && mode('ring') === 'may' && ringFound && rng() < 0.5) { const r = pool.filter(c => c.att.ring); if (r.length) pool = r; }
+    if (!o.maximize && !anyMust && mode('ring') === 'may' && ctx.ringFound && rng() < 0.5) { const r = pool.filter(c => c.att.ring); if (r.length) pool = r; }
     if (!pool.length) {
-      return { error: 'Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.', attempts };
+      return { error: 'Kunne ikke finde en bane der passer. Prøv en større plade, flere spor eller tillad flere grundformer.', attempts: ctx.attempts };
     }
     let list;
     if (long) {
@@ -466,151 +661,59 @@
     }
 
     // ---------- fase 2: vækst + elementer ----------
-    const musts = MK.elements.filter(e => mode(e.id) === 'must' && e.apply).map(e => e.id);
-    const d = o.stationTracks || 0;
-    const reserve = { '24188': 2 * d + d * (d - 1) + 2, '24172': 2 * d + d * (d - 1) + 2 };
     let best = null, tried = 0, invalid = 0;
     const timing = {};
     const tF = Date.now();
     for (let it = 0; it < (long ? 100000 : list.length); it++) {
       const idx = it % list.length;
       if (long && it >= list.length && Date.now() > deadline) break;
-      if (best && (long ? (Date.now() > deadline || (!o.maximize && !best.unused && !best.missing.length)) : (!best.missing.length || Date.now() - tF > 2500))) break;
-      const ch = list[idx];
-      const chains = structuredClone(ch.att.chains);
-      let f = { rot: ch.rot, b: ch.b, offset: ch.offset || { x: 0, y: 0 } };
-      let stemmed = 0;
+      if (best && (long ? (Date.now() > deadline || (!o.maximize && !best.ev.unused && !best.ev.missing.length)) : (!best.ev.missing.length || Date.now() - tF > 2500))) break;
+      const base = list[idx];
+      // valg som i den gamle generator: faste sandsynligheder
+      const valg = { frac: 1, stems: false, ccross: 1 + Math.floor(rng() * 3) };
+      let growMs = 0;
       if (o.maximize) {
         const left = Math.max(0, deadline - Date.now());
         // kort væksttid pr. kandidat: det er sammensætningen bagefter (ruter, stationer) der giver point,
         // så det gælder om at nå mange kandidater
-        let per = Math.max(40, Math.min(110, left / 20));
+        growMs = Math.max(40, Math.min(110, left / 20));
         // skal alle sporskifter med, vokses nogle kandidater mindre, så der bliver plads til sidespor
         // det samme gælder en 'Skal'-ekstra sløjfe: den skal have plads inde i eller ved siden af banen
-        const frac = o.allSwitches || mode('inner') === 'must' ? [0, 0.15, 0.35, 0.6, 1][Math.floor(rng() * 5)] : 1;
-        per *= frac;
-        const tG = Date.now();
-        if (per > 0) growLayout(chains, inv, o, rng, Date.now() + per, reserve, innerW, innerH);
-        timing.grow = (timing.grow || 0) + Date.now() - tG;
-        if (mode('link') !== 'off' && C.cnt(inv, '24671') + C.cnt(inv, '24672') > 0 && rng() < 0.75) stemmed = addStems(chains, rng, 1 + Math.floor(rng() * 2), innerW, innerH);
-        const fs = fitsOf(chains, innerW, innerH);
-        if (!fs.length) continue;
-        fs.sort((a, b) => (a.b.w * a.b.h) - (b.b.w * b.b.h));
-        f = fs[Math.floor(rng() * fs.length)];
-        f.offset = placementFor(chains, f, o, innerW, innerH);
-        if (!f.offset) continue;
+        valg.frac = o.allSwitches || mode('inner') === 'must' ? [0, 0.15, 0.35, 0.6, 1][Math.floor(rng() * 5)] : 1;
+        valg.stems = mode('link') !== 'off' && C.cnt(inv, '24671') + C.cnt(inv, '24672') > 0 && rng() < 0.75;
       }
+      const node = stepGrow(ctx, base, valg, growMs, timing);
+      if (!node) continue;
       tried++;
-      const tf = makeTf(f, o, innerW, innerH, f.offset);
-      const layout = { chains, sides: [] };
-      chains.forEach(c => { c.start = c.attach !== undefined ? chains[c.attach].end : tf(c.start); layoutChain(c); });
-      if (!C.pointsClearAreas(chains.flatMap(c => c.samples), o.areas)) continue;
-      layout.sym = symmetryCenter(chains);
-      const used = {};
-      // alt skal hænge sammen: en parallel ring skal forbindes med mindst én sporforbindelse
-      if (chains.some(c => c.kind === 'ring')) {
-        let n = 0;
-        // buesporskifter i hjørnerne først (kræver hverken 24224 eller alm. sporskifter), så alm. sporforbindelser
-        if (mode('ccross') !== 'off') { const c = MK.router.addCornerCross(layout, inv, o, rng, 1 + Math.floor(rng() * 3)); if (c) { used.ccross = c; n += c; } }
-        if (mode('crossover') !== 'off') for (let k = 0; k < 3 && n < 4; k++) { const c = MK.elements.find(e => e.id === 'crossover').apply(layout, inv, o, rng); if (c) { used.crossover = (used.crossover || 0) + c; n += c; } }
-        // ringe der ikke er forbundet (direkte eller via en anden ring) med hovedsporet fjernes
-        const conn = new Set(chains.map((c, i) => c.kind === 'ring' ? -1 : i).filter(i => i >= 0));
-        for (let grow = true; grow;) {
-          grow = false;
-          for (const sd of layout.sides) if (sd.link && conn.has(sd.link[0]) !== conn.has(sd.link[1])) { sd.link.forEach(i => conn.add(i)); grow = true; }
-        }
-        for (let i = chains.length - 1; i >= 0; i--) {
-          if (chains[i].kind !== 'ring' || conn.has(i)) continue;
-          layout.sides = layout.sides.filter(sd => !(sd.link && sd.link.includes(i)));
-          chains.splice(i, 1);
-        }
-      }
-      // ringe og ballonsløjfer må også få sporskifter, stationer og ruter (sporgrafen kontrollerer resultatet)
-      chains.forEach(c => { if (c.kind === 'ring' || c.kind === 'balloon') c.eligible = true; });
-      const tryEl = id => {
-        const el = MK.elements.find(e => e.id === id);
-        const m = mode(id);
-        if (!el || !el.apply || m === 'off' || used[id]) return;
-        if (m === 'may' && !long && rng() > 0.65) return;
-        if (m === 'may' && el.sometimes && rng() > el.sometimes) return;      // dyre elementer prøves kun i nogle forsøg
-        const tE = Date.now();
-        const n = el.apply(layout, inv, o, rng);
-        timing[id] = (timing[id] || 0) + Date.now() - tE;
-        if (n) used[id] = (used[id] || 0) + n;
-      };
+      stepRings(ctx, node, valg);
       // rækkefølge: 'Skal'-elementer, så stationen (brugerens punkt), så 'Kan'-elementer
       // frie forbindelser (ruteløseren) lægges enten før eller efter stationerne – begge dele prøves over mange forsøg
-      const stations = ['cfan', 'tstation', 'cstation', 'cpassing', 'spassing', 'passing'];
-      const routes = shuffle(rng, ['cutoff', 'wye', 'stub', 'link']);
-      if (stemmed) { routes.splice(routes.indexOf('link'), 1); routes.unshift('link'); }
-      const order = ['ccross', 'crossover', 'inner', ...(stemmed || rng() < 0.5 ? [...routes, ...stations] : [...stations, ...routes]), ...shuffle(rng, ['threeway', 'csiding', 'siding'])];
-      for (const id of order.filter(id => mode(id) === 'must')) tryEl(id);
-      const tS = Date.now();
-      const station = MK.station.addStation(layout, inv, o, rng);
-      timing.station = (timing.station || 0) + Date.now() - tS;
-      for (const id of order.filter(id => mode(id) !== 'must')) tryEl(id);
-      if (o.allSwitches) {
-        const f = MK.switches.fillSwitches(layout, inv, o, rng);
-        for (const k in f) used[k] = (used[k] || 0) + f[k];
-      }
-      const unused = MK.switches.switchesLeft(layout, inv);
-      const missing = musts.filter(id => !used[id]);
-      const nUsed = countUsed(layout);
-      // sikkerhedsnet: alle skinneender skal mødes, og lageret må ikke overskrides
-      const an = MK.graph.analyze(layout);
-      if (an.problems.length || Object.values(spareOf(inv, usageOf(layout))).some(v => v < 0)) { invalid++; continue; }
-      if (!C.pointsClearAreas(obstaclePts(layout), o.areas)) { invalid++; continue; }
-      const parts = scoreLayout({ layout, chains: layout.chains, used, station, an, missing, unused, nUsed, o, innerW, innerH });
-      if (o.areas && o.areas.length) {
-        const covered = freeSpaceCoverage(obstaclePts(layout), o);
-        parts.freeSpace = covered * 8000;
-        parts.total += parts.freeSpace;
-      }
-      const sc = parts.total + 0.5 * rng();
+      const ord = orderFor(ctx, node, node.stemmed || rng() < 0.5);
+      const all = [...ord.t4, ...ord.t5];
+      stepMust(ctx, node, all, timing);
+      const decide = id => {
+        const m = mode(id), el = MK.elements.find(e => e.id === id);
+        if (m === 'may' && !long && rng() > 0.65) return false;
+        if (m === 'may' && el.sometimes && rng() > el.sometimes) return false;      // dyre elementer prøves kun i nogle forsøg
+        return true;
+      };
+      stepCan(ctx, node, all, { decide }, timing);
+      if (o.allSwitches) stepFill(ctx, node);
+      const ev = evaluate(ctx, node);
+      if (!ev.ok) { invalid++; continue; }
+      const sc = ev.total + 0.5 * rng();
       if (!best || sc > best.sc) {
-        best = { sc, parts, layout, used, station, ch, missing, nUsed, unused, an };
-        progress('Optimerer', { best: nUsed, total: totalPieces, tried, swUsed: switchesTotal - unused, swTotal: switchesTotal });
+        best = { sc, node, ev, base };
+        ctx.progress('Optimerer', { best: ev.nUsed, total: ctx.totalPieces, tried, swUsed: ctx.switchesTotal - ev.unused, swTotal: ctx.switchesTotal });
       }
     }
-    if (!best) {
-      const reason = o.areas && o.areas.length
-        ? 'Der er ikke nok sammenhængende plads uden for forbudsområderne. Gør et område mindre, flyt det eller fjern et område.'
-        : 'Kunne ikke placere en bane. Prøv igen eller med længere tænketid.';
-      return { error: reason, attempts };
-    }
-    const { layout, used, station, missing } = best;
-    const ch = best.ch;
-    for (const p of [...layout.chains.flatMap(c => c.pieces), ...layout.sides.flatMap(s => s.pieces)]) {
-      if (p.branch) p.branchPtsList = C.branchPtsOf(p);
-    }
-    const usage = usageOf(layout);
-    const arcR = layout.chains.flatMap(c => c.pieces).filter(p => p.geo.kind === 'arc' && !p.virtual && p.art !== '24224' && p.art !== '24206').map(p => p.geo.r);
-    const mainLen = layout.chains.filter(c => c.kind === 'main' || c.kind === 'line').reduce((a, c) => a + c.pieces.filter(p => !p.virtual).reduce((s, p) => s + geoLen(p.geo), 0), 0);
-    const ring = layout.chains.find(c => c.kind === 'ring');
-    const reverse = best.an.reverse;
-    const strat = [{ id: ch.att.topo, name: ch.att.dslip ? ch.att.name : MK.topologies.find(t => t.id === ch.att.topo).name, n: 1 }];
-    if (ring) strat.push({ id: 'ring', name: 'Parallel ring', n: 1 });
-    if (ring && layout.chains.filter(c => c.kind === 'ring').length >= 2) {
-      strat.push({ id: 'ring3', name: 'Tresporet lukket sløjfe', n: 1 });
-    }
-    if (station && station.tracks) strat.push({ id: 'station', name: `Station (${station.tracks + 1} spor)`, n: 1 });
-    for (const e of MK.elements) if (used[e.id]) strat.push({ id: e.id, name: e.name, n: used[e.id] });
-    return {
-      chains: layout.chains, sides: layout.sides, used: usage, spare: spareOf(inv, usage), sig: ch.att.sig,
-      station, point: o.point, strategies: strat, score: best.parts.total, scoreParts: best.parts,
-      missing: missing.map(id => MK.elements.find(e => e.id === id).name),
-      stats: {
-        name: ch.att.name, topo: ch.att.topo, length: mainLen, double: !!ring, outerLength: ring ? ring.length : 0,
-        reverseLoops: reverse, bbox: bbox(obstaclePts(layout)),
-        radii: [...new Set(arcR)].sort((a, b) => a - b).map(r => RNAME[r]),
-        sidings: used.siding || 0, crossovers: (used.crossover || 0) + (used.ccross || 0), stationTracks: station ? station.tracks : 0,
-        routes: best.an.routes, timing, attempts, valid: cands.length, tried, invalid, piecesUsed: best.nUsed, piecesTotal: totalPieces,
-        switchesUsed: switchesTotal - best.unused, switchesTotal, rough: layout.sides.filter(sd => sd.rough).length,
-        ms: Date.now() - t0,
-      },
-    };
+    if (!best) return { error: noBaseError(ctx), attempts: ctx.attempts };
+    return buildResult(ctx, best, { timing, attempts: ctx.attempts, valid: cands.length, tried, invalid, ms: Date.now() - t0 });
   }
 
   MK.generate = generate;
-  MK.compose = { addStems, symmetryCenter, growLayout, scoreLayout };
+  MK.compose = {
+    addStems, symmetryCenter, growLayout, scoreLayout, placementFor, fitsOf, makeTf, spaceCoverage, freeSpaceCoverage,
+    makeContext, findBases, stepGrow, stepRings, orderFor, applyElement, stepMust, stepCan, stepFill, evaluate, buildResult, noBaseError, countUsed,
+  };
 })(typeof self !== 'undefined' ? self : globalThis);
