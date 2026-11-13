@@ -111,6 +111,25 @@
     for (let i = 0; i < items.length; i++) { x -= w[i]; if (x <= 0) return items[i]; }
     return items[items.length - 1];
   };
+  /** Gamma(k, 1)-træk (Marsaglia–Tsang); k < 1 via k+1 og u^(1/k). */
+  function gammaDraw(rng, k) {
+    if (k < 1) return gammaDraw(rng, k + 1) * Math.pow(rng() || 1e-12, 1 / k);
+    const d = k - 1 / 3, c = 1 / Math.sqrt(9 * d);
+    for (;;) {
+      let x, v;
+      do {
+        // standardnormal (Box–Muller)
+        const u1 = rng() || 1e-12, u2 = rng();
+        x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+        v = 1 + c * x;
+      } while (v <= 0);
+      v = v * v * v;
+      const u = rng() || 1e-12;
+      if (Math.log(u) < 0.5 * x * x + d - d * v + d * Math.log(v)) return d * v;
+    }
+  }
+  /** Beta(a, b)-træk som to Gamma-træk. */
+  function betaDraw(rng, a, b) { const x = gammaDraw(rng, a), y = gammaDraw(rng, b); return x / (x + y); }
   const shuffle = (rng, a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const cnt = (inv, a) => inv[a] || 0;
   const lenOf = arts => arts.reduce((a, b) => a + BY_ART[b].len, 0);
@@ -777,7 +796,7 @@
     return [half1, half2];
   }
   /** Kopi af indstillingerne med en delfrist (o.until): højst frac af det samlede budget, og aldrig efter hovedfristen. */
-  const subDeadline = (o, frac) => Object.assign({}, o, { until: Math.min(o.until === undefined ? Infinity : o.until, o.deadline === undefined ? Infinity : o.deadline, Date.now() + frac * (o.timeBudget || 1000)) });
+  const subDeadline = (o, frac) => o.noTime ? Object.assign({}, o, { until: Infinity }) : Object.assign({}, o, { until: Math.min(o.until === undefined ? Infinity : o.until, o.deadline === undefined ? Infinity : o.deadline, Date.now() + frac * (o.timeBudget || 1000)) });
   let runCounter = 0;
   const newRunId = () => ++runCounter;
   function slotsToPieces(slots) {
@@ -794,7 +813,7 @@
   MK.core = {
     R1, R2, R3, R4, R5, R9, SW_ANG, SW_LEN, SLIM_ANG, SLIM_LEN, SLIM_SPACING, BUFFERS, bufLeft, bufArt, TRACK_SPACING, MIN_CLEAR, JUNCTION, D2R,
     CATALOG, BY_ART, STRAIGHTS, CURVES, RADII, RNAME, ART30, BALLOON_GAP,
-    mulberry32, pickW, shuffle, cnt, lenOf, geoLen, arcG, lineG, linePiece, arcPieces, handFor, norm180, cross, unit, removeArts, countOf,
+    mulberry32, gammaDraw, betaDraw, pickW, shuffle, cnt, lenOf, geoLen, arcG, lineG, linePiece, arcPieces, handFor, norm180, cross, unit, removeArts, countOf,
     walkGeo, walkGeoOld, walkAll, layoutChain, insidePolygon, deep, cloneChains, cloneSides, cloneLayout, Grid, chainsCollide, bbox, pointsClearAreas,
     capacity, cap15, totalCurveDeg, takeArc, takeArts, hasArts, findArcCombo, usageOf, spareOf, spareNow, straightCombos, findStraights,
     collectRuns, refreshRun, reorderRun, subsetSums, placeOne, placeTwo, switchable,

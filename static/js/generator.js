@@ -629,7 +629,7 @@
     if (ctx.error) return { error: ctx.error };
     const { o, mode, rng, avoid, long } = ctx;
     // 'flest skinner' / 'alle sporskifter': den vedvarende søgning (search.js). Kort tilstand beholder løkken herunder.
-    if (long && MK.createSession && !o.legacy) return MK.createSession(inv, opts).next(o.timeBudget);
+    if (long && MK.createSession && !o.legacy) return MK.createSession(inv, opts).next(o.timeBudget, 0.08);
     const t0 = Date.now();
     const deadline = t0 + o.timeBudget;
     const phase1 = t0 + (long ? o.timeBudget * 0.3 : o.timeBudget);

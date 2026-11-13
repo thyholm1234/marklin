@@ -487,7 +487,7 @@
       }
       if (focusPorts && (!focusPorts.length || !otherPorts.length)) break;
       const tI = Date.now();
-      const idx = makeIndex(sel, spare, { depth: opts.depth || CFG.depth, maxStates: opts.maxStates || CFG.maxStates, perState: CFG.perState, deadline: Math.min(Date.now() + (opts.ms || CFG.ms), until), until, box, rng, pairOk, perPair: 12 });
+      const idx = makeIndex(sel, spare, { depth: opts.depth || CFG.depth, maxStates: opts.maxStates || CFG.maxStates, perState: CFG.perState, deadline: Math.min(o.noTime ? Infinity : Date.now() + (opts.ms || CFG.ms), until), until, noTime: o.noTime, box, rng, pairOk, perPair: 12 });
       if (dbg) { dbg.ms = (dbg.ms || 0) + Date.now() - tI; dbg.ports = (dbg.ports || 0) + sel.length; dbg.meetPairs = (dbg.meetPairs || 0) + idx.pairs.length; }
       const prs = idx.pairs.map(pr => ({ pr, w: rng() - ((idx.searches[pr.i].port.tag === 'ci' || idx.searches[pr.j].port.tag === 'ci') ? 0.7 : 0) })).sort((x, y) => x.w - y.w);
       for (const { pr } of prs) {
@@ -744,7 +744,7 @@
         const box = { x0: m, y0: m, x1: o.W - m, y1: o.H - m };
         // 3. værtsporte: bredde-først fra porten giver stillinger (med garanteret rute dertil) hvor sløjfen kan sidde
         const hosts = shuffle(rng, hostPorts.slice()).slice(0, 8);
-        const deadline = Math.min(Date.now() + 120, until);
+        const deadline = Math.min(o.noTime ? Infinity : Date.now() + 120, until);
         for (const A of hosts) {
           if (done || tries >= 10 || Date.now() > deadline) break;
           const sr = searchPort(A, spare, { depth: 4, maxStates: 2500, box, rng });
