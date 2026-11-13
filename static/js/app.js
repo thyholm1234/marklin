@@ -155,14 +155,17 @@
   // ---------- generering ----------
   // Løbende generering i en Web Worker: hver færdig bane sendes tilbage og lægges i listen, sorteret
   // efter point. Der er ingen samlet tidsgrænse – brugeren stopper selv. Falder tilbage til direkte kørsel.
-  const RUN_MS = s => s.maximize || s.allSwitches ? 2500 : 900;     // tænketid pr. bane
-  let worker = null, jobId = 0, timer = null, statusTimer = null, running = false, follow = true, errors = 0, t0 = 0;
+  const RUN_MS = s => s.maximize || s.allSwitches ? 2500 : 900;     // tænketid pr. kald til en session
+  // flere workere: én pr. kerne minus én (højst 6); hver har sine egne sessioner med forskudt seed
+  const nWorkers = () => Math.min(6, Math.max(1, (navigator.hardwareConcurrency || 2) - 1));
+  let workers = [], jobId = 0, timer = null, statusTimer = null, running = false, follow = true, errors = 0, t0 = 0, deadWorkers = 0;
   function newWorker() {
-    try { return new Worker('js/worker.js?v=20261112-2112'); } catch (e) { return false; }
+    try { return new Worker('js/worker.js?v=20261113-1000'); } catch (e) { return false; }
   }
   function stop(msg) {
     running = false; jobId++;
-    if (worker) { worker.terminate(); worker = null; }
+    for (const w of workers) { try { w.postMessage({ cmd: 'stop' }); } catch (e) { /* ignorer */ } w.terminate(); }
+    workers = [];
     clearTimeout(timer); clearTimeout(statusTimer);
     $('gen').textContent = 'Generér baner'; $('gen').classList.remove('running');
     if (msg) $('status').innerHTML = msg; else showStatus();
@@ -170,7 +173,7 @@
   function start() {
     stop();
     const s = settings(); saveSettings();
-    state.history = []; state.idx = -1; follow = true; errors = 0; t0 = Date.now();
+    state.history = []; state.idx = -1; follow = true; errors = 0; t0 = Date.now(); deadWorkers = 0;
     renderList(); $('stage').innerHTML = '<div class="empty">Genererer …</div>'; $('factsCard').hidden = true;
     const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
     const opts = { ...s, seed, avoid: [], timeBudget: RUN_MS(s) };
@@ -178,35 +181,60 @@
     running = true;
     $('gen').textContent = 'Stop'; $('gen').classList.add('running');
     showStatus();
-    const add = res => {
+    // et resultat med replaces erstatter den tidligere bane fra samme worker (hvis den stadig er på listen) og
+    // beholder dens nummer; ellers lægges det til
+    const add = (res, wi, uid, replaces) => {
       if (id !== jobId) return;
+      if (res.idle) return;
       if (res.error) {
-        if (++errors >= 4 && !state.history.length) stop(`<span class="warn">${res.error}</span>`);
+        if (++errors >= 4 * Math.max(1, workers.length) && !state.history.length) stop(`<span class="warn">${res.error}</span>`);
         return;
       }
       errors = 0;
-      state.history.push({ res, s, n: state.history.length + 1 });
+      const key = wi + ':' + uid;
+      const k = replaces ? state.history.findIndex(h => h.key === wi + ':' + replaces) : -1;
+      if (k >= 0) state.history[k] = { res, s, n: state.history[k].n, key };
+      else state.history.push({ res, s, n: state.history.length + 1, key });
       const bestI = bestIndex();
       if (follow && bestI !== state.idx) { state.idx = bestI; show(); }
       renderList(); showStatus();
+      // send viste signaturer videre, så de andre workeres sessioner undgår at vise det samme igen
+      workers.forEach((w, j) => { if (j !== wi) try { w.postMessage({ cmd: 'avoid', sig: res.sig }); } catch (e) { /* ignorer */ } });
     };
-    worker = newWorker();
-    if (!worker) {
-      // uden worker: én bane ad gangen med pauser, så siden kan reagere
+    const n = nWorkers();
+    for (let i = 0; i < n; i++) {
+      const w = newWorker();
+      if (!w) break;
+      workers.push(w);
+      const wi = workers.length - 1;
+      w.onmessage = e => { if (e.data.id === id) add(e.data.result, wi, e.data.uid, e.data.replaces); };
+      w.onerror = () => {
+        // fejl i én worker stopper ikke de andre; først når alle er døde vises fejlen
+        try { w.terminate(); } catch (err) { /* ignorer */ }
+        if (id !== jobId) return;
+        if (++deadWorkers >= workers.length) stop('<span class="warn">Generatoren stoppede med en fejl.</span>');
+        else showStatus();
+      };
+      w.postMessage({ cmd: 'start', id, inv: { ...readInventory() }, opts: { ...opts, seed: (seed + i * 7919) >>> 0 }, first: i, runMs: RUN_MS(s) });
+    }
+    if (!workers.length) {
+      // uden worker: én session på hovedtråden, next(RUN_MS) med pauser, så siden kan reagere
+      const long = s.maximize || s.allSwitches;
+      const session = long ? MK.createSession({ ...readInventory() }, opts) : null;
       let k = 0;
       const step = () => {
         if (id !== jobId) return;
-        const topos = Object.keys(opts.topologies).filter(t => opts.topologies[t]);
-        const tp = topos.length > 1 ? Object.fromEntries(Object.keys(opts.topologies).map(t => [t, t === topos[k % topos.length]])) : opts.topologies;
-        add(MK.generate({ ...readInventory() }, { ...opts, topologies: tp, seed: (seed + k++ * 104729) >>> 0, avoid: state.history.slice(-60).map(h => h.res.sig) }));
+        if (session) add(session.next(RUN_MS(s)), 0, ++k, 0);
+        else {
+          // kort tilstand: én hurtig bane ad gangen, grundformerne på skift
+          const topos = Object.keys(opts.topologies).filter(t => opts.topologies[t]);
+          const tp = topos.length > 1 ? Object.fromEntries(Object.keys(opts.topologies).map(t => [t, t === topos[k % topos.length]])) : opts.topologies;
+          add(MK.generate({ ...readInventory() }, { ...opts, topologies: tp, seed: (seed + k++ * 104729) >>> 0, avoid: state.history.slice(-60).map(h => h.res.sig) }), 0, k, 0);
+        }
         timer = setTimeout(step, 30);
       };
       timer = setTimeout(step, 20);
-      return;
     }
-    worker.onmessage = e => { if (e.data.id === id) add(e.data.result); };
-    worker.onerror = () => stop('<span class="warn">Generatoren stoppede med en fejl.</span>');
-    worker.postMessage({ id, inv: { ...readInventory() }, opts });
   }
   const generate = () => (running ? stop() : start());
   const byScore = () => state.history.map((h, i) => i).sort((a, b) => state.history[b].res.score - state.history[a].res.score);
@@ -214,7 +242,7 @@
   function showStatus() {
     const n = state.history.length;
     const secs = fmt((Date.now() - t0) / 1000, 0);
-    if (running) $('status').textContent = `Genererer … ${n} bane${n === 1 ? '' : 'r'} på ${secs} s · tryk Stop når du har set nok`;
+    if (running) $('status').textContent = `Genererer … ${n} bane${n === 1 ? '' : 'r'} på ${secs} s · ${Math.max(1, workers.length - deadWorkers)} worker${workers.length - deadWorkers > 1 ? 'e' : ''} · tryk Stop når du har set nok`;
     else if (n) show(true);
     else $('status').innerHTML = 'Tryk <kbd>Generér baner</kbd> (eller mellemrum)';
     if (running) { clearTimeout(statusTimer); statusTimer = setTimeout(showStatus, 1000); }
